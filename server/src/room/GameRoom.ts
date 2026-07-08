@@ -16,7 +16,8 @@ export class GameRoom {
   eliminationOrder: string[] = [];
   pendingMoves: Map<string, { moveId: string; targets: string[] }> = new Map();
   thinkingDeadline: number = 0;
-  massDeathTriggered: boolean = false;  // 过半死亡 → skip normal level-up
+  massDeathTriggered: boolean = false;
+  massDeathLevelUps: import('../../shared/types').LevelUp[] = [];
   timer: ReturnType<typeof setTimeout> | null = null;
   disconnectedPlayers: Map<string, ReturnType<typeof setTimeout>> = new Map();
 

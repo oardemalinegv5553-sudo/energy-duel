@@ -222,8 +222,13 @@ export class GameEngine {
       if (aliveAfter.length === 0 || (massDeath && aliveAfter.length > 0)) {
         // Game over: all dead OR mass death with survivors
         // Mass death: survivors auto-level before ending
+        room.massDeathLevelUps = [];
         if (massDeath && aliveAfter.length > 0) {
           for (const p of aliveAfter) {
+            room.massDeathLevelUps.push({
+              playerId: p.id, nickname: p.nickname,
+              oldLevel: p.level, newLevel: p.level + 1,
+            });
             p.level += 1;
           }
           room.massDeathTriggered = true;
@@ -251,12 +256,13 @@ export class GameEngine {
 
     const rankings = computeRankings(room.getAllPlayers(), room.eliminationOrder);
 
-    // 过半死亡 → survivors already leveled up in startResultPhase, skip normal quota
+    // 过半死亡 → survivors already leveled up, use recorded levelUps
     const levelUps = room.massDeathTriggered
-      ? []
+      ? room.massDeathLevelUps
       : computeLevelUps(rankings, room.getAllPlayers());
     applyLevelUps(levelUps, room.players);
-    room.massDeathTriggered = false;  // reset for next game
+    room.massDeathTriggered = false;
+    room.massDeathLevelUps = [];
 
     const state: GameState = {
       phase: 'finished',
