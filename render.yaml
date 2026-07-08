@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: energy-duel-server
+    env: node
+    buildCommand: cd server && npm install
+    startCommand: cd server && npx tsx src/index.ts
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
