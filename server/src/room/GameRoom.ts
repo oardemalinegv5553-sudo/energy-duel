@@ -15,6 +15,7 @@ export class GameRoom {
   hostId: string = '';
   eliminationOrder: string[] = [];
   pendingMoves: Map<string, { moveId: string; targets: string[] }> = new Map();
+  initialLevel: number = 1;
   thinkingDeadline: number = 0;
   massDeathTriggered: boolean = false;
   massDeathLevelUps: import('../../shared/types').LevelUp[] = [];
@@ -34,7 +35,7 @@ export class GameRoom {
     const id = generateId();
     const player: PlayerState = {
       id, nickname,
-      level: 1, hp: 1, energy: 0,
+      level: this.initialLevel, hp: 1, energy: 0,
       alive: true, buffs: [],
     };
     this.players.set(id, player);

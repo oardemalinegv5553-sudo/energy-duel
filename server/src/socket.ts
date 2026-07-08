@@ -23,7 +23,7 @@ export function createSocketServer(httpServer: HTTPServer) {
 
     // ---- Room Creation ----
     socket.on('create_room', (data, ack) => {
-      const room = roomManager.createRoom(data.roomType || 'duo');
+      const room = roomManager.createRoom(data.roomType || 'duo', data.initialLevel || 1);
       const player = room.addPlayer(data.nickname);
 
       socket.join(room.roomCode);

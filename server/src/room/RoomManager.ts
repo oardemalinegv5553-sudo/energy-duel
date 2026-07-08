@@ -14,12 +14,13 @@ function generateRoomCode(): string {
 export class RoomManager {
   private rooms: Map<string, GameRoom> = new Map();
 
-  createRoom(roomType: RoomType = 'duo'): GameRoom {
+  createRoom(roomType: RoomType = 'duo', initialLevel: number = 1): GameRoom {
     let code: string;
     do {
       code = generateRoomCode();
     } while (this.rooms.has(code));
     const room = new GameRoom(code, roomType);
+    room.initialLevel = Math.max(1, Math.min(13, initialLevel));
     this.rooms.set(code, room);
     return room;
   }

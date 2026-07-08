@@ -103,7 +103,7 @@ export interface GameState {
 
 // ---- Socket Events ----
 export interface ClientToServerEvents {
-  create_room: (data: { nickname: string; roomType: RoomType }, ack: (res: { roomCode: string; playerId: string }) => void) => void;
+  create_room: (data: { nickname: string; roomType: RoomType; initialLevel?: number }, ack: (res: { roomCode: string; playerId: string }) => void) => void;
   join_room: (data: { nickname: string; roomCode: string }, ack: (res: { success: boolean; error?: string; playerId?: string; roomType?: RoomType }) => void) => void;
   leave_room: () => void;
   start_game: () => void;
