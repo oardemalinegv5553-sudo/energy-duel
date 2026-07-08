@@ -123,11 +123,17 @@ export class GameEngine {
       targets = room.getAlivePlayers().filter(p => p.id !== playerId).map(p => p.id);
     }
 
-    // Validate targets are alive
-    for (const tid of targets) {
-      const target = room.players.get(tid);
-      if (!target || !target.alive) return false;
+    // Validate targets are alive, not self, and not duplicates
+    if (moveDef.atk > 0 || moveDef.specialEffect === 'ou_steal') {
+      for (const tid of targets) {
+        const target = room.players.get(tid);
+        if (!target || !target.alive) return false;
+        if (tid === playerId) return false; // cannot target self
+      }
+      // Check for duplicate targets
+      if (new Set(targets).size !== targets.length) return false;
     }
+    if (moveDef.targetType === 'none' && targets.length > 0) return false;
 
     room.pendingMoves.set(playerId, { moveId, targets });
 
