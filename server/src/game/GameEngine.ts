@@ -4,7 +4,7 @@ import { resolveEnergy } from './EnergyResolver';
 import { resolveAttacks } from './MoveResolver';
 import { computeRankings, computeLevelUps, applyLevelUps } from './LevelResolver';
 import { getMoveById } from '../data/moves';
-import { chooseBotMove, createBotMemory, recordOpponentMove } from './BotEngine';
+import { chooseBotMove, chooseHardBotMove, createBotMemory, recordOpponentMove } from './BotEngine';
 import { RoundResolution, GameState, PlayerInfo } from '../../../shared/types';
 
 const THINKING_TIME = 30_000;  // 30 seconds
@@ -101,11 +101,12 @@ export class GameEngine {
     }
   }
 
-  /** Run bot moves at the beginning of thinking phase */
+  /** Run easy/normal bot moves at the beginning of thinking phase (hard bots wait) */
   private runBotMoves(room: GameRoom): void {
     const alive = room.getAlivePlayers();
     for (const bot of alive) {
       if (!bot.isBot) continue;
+      if (bot.botLevel === 'hard') continue; // hard bot waits for everyone else
       if (room.pendingMoves.has(bot.id)) continue;
 
       const memory = room.botMemories.get(bot.id) || createBotMemory();
@@ -173,11 +174,28 @@ export class GameEngine {
   /** Check if all players submitted, then reveal. Returns true if round advanced. */
   checkAllSubmitted(room: GameRoom): boolean {
     const alive = room.getAlivePlayers();
+    const hardBots = alive.filter(p => p.isBot && p.botLevel === 'hard');
 
-    // All alive players (humans + bots) must have submitted
-    const allDone = alive.every(p => room.pendingMoves.has(p.id));
-    if (!allDone) return false;
+    // All non-hard players must have submitted first
+    const nonHardDone = alive.every(p => p.botLevel === 'hard' || room.pendingMoves.has(p.id));
+    if (!nonHardDone) return false;
 
+    // Run hard bots now that everyone else's moves are known
+    for (const hardBot of hardBots) {
+      if (!room.pendingMoves.has(hardBot.id)) {
+        const { moveId, targets } = chooseHardBotMove(
+          hardBot, room.getAllPlayers(), room.pendingMoves
+        );
+        const moveDef = getMoveById(moveId);
+        if (moveDef && hardBot.energy >= moveDef.cost) {
+          room.pendingMoves.set(hardBot.id, { moveId, targets });
+        } else {
+          room.pendingMoves.set(hardBot.id, { moveId: 'yun', targets: [] });
+        }
+      }
+    }
+
+    // Now everyone (including hard bots) has submitted
     room.clearTimer();
     this.startRevealPhase(room);
     return true;

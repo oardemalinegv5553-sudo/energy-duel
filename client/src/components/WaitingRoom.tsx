@@ -16,6 +16,7 @@ interface Props {
 export default function WaitingRoom({ roomCode, players, isHost, playerId, roomType, socket, onLeave }: Props) {
   const maxPlayers = roomType === 'duo' ? 2 : 8;
   const [showBotMenu, setShowBotMenu] = useState(false);
+  const hasHardBot = players.some(p => p.isBot && p.botLevel === 'hard');
   const canAddBot = isHost && players.length < maxPlayers;
 
   const handleStart = () => {
@@ -46,8 +47,7 @@ export default function WaitingRoom({ roomCode, players, isHost, playerId, roomT
         {players.map((p) => (
           <div key={p.id} className={`player-row ${p.id === playerId ? 'is-me' : ''}`}>
             <span className="player-name">
-              {p.isBot && '🤖 '}
-              {p.nickname}
+              {p.isBot && (p.botLevel === 'hard' ? '💀' : p.botLevel === 'easy' ? '🤖' : '🧠')} {p.nickname}
               {p.id === playerId && ' (你)'}
             </span>
             <span className="player-level">Lv.{p.level}</span>
@@ -69,6 +69,11 @@ export default function WaitingRoom({ roomCode, players, isHost, playerId, roomT
                 <button className="btn btn-sm" onClick={() => addBot('normal')}>
                   🧠 普通人机
                 </button>
+                {!hasHardBot && (
+                  <button className="btn btn-sm" onClick={() => addBot('hard')}>
+                    💀 困难人机
+                  </button>
+                )}
                 <button className="btn btn-ghost btn-sm" onClick={() => setShowBotMenu(false)}>
                   取消
                 </button>

@@ -592,6 +592,130 @@ export function recordOpponentMove(memory: BotMemory, opponentId: string, moveId
 }
 
 // ================================================================
+// HARD BOT — reactive counter-pick (runs AFTER everyone else submitted)
+// ================================================================
+
+export function chooseHardBotMove(
+  bot: PlayerState,
+  allPlayers: PlayerState[],
+  pendingMoves: Map<string, { moveId: string; targets: string[] }>
+): { moveId: string; targets: string[] } {
+  const available = getMovesByLevel(bot.level);
+  const affordable = available.filter(m => bot.energy >= m.cost);
+  const others = allPlayers.filter(p => p.alive && p.id !== bot.id);
+  if (others.length === 0) return { moveId: 'yun', targets: [] };
+
+  // ---- Analyze what everyone else is doing ----
+  const incomingAttacks: { attacker: PlayerState; move: MoveDef }[] = [];
+  const incomingOus: string[] = [];  // player IDs using 欧 on us
+  const chargers: PlayerState[] = [];
+  const vulnerable: PlayerState[] = [];  // not defending, can be attacked
+
+  for (const other of others) {
+    const sub = pendingMoves.get(other.id);
+    if (!sub) continue;
+    const move = getMoveById(sub.moveId);
+    if (!move) continue;
+
+    // Attacks targeting us
+    if (sub.targets.includes(bot.id)) {
+      if (move.atk > 0) incomingAttacks.push({ attacker: other, move });
+      if (move.specialEffect === 'ou_steal') incomingOus.push(other.id);
+    }
+
+    if (move.type === 'charge') chargers.push(other);
+
+    // Vulnerable: not defending, not using 观音坐莲
+    const isDefending = move.def > 0 || move.type === 'special_defense';
+    const isGuanyin = move.specialEffect === 'guanyin_buff';
+    if (!isDefending && !isGuanyin) {
+      vulnerable.push(other);
+    }
+  }
+
+  // ============================================================
+  // Rule: Being attacked → best defense
+  // ============================================================
+  if (incomingAttacks.length > 0) {
+    const maxATK = Math.max(...incomingAttacks.map(a => a.move.atk));
+    const hasXianglong = incomingAttacks.some(a => a.move.id === 'xianglong');
+    const hasLongzhua = incomingAttacks.some(a => a.move.id === 'longzhua');
+    const hasDu = incomingAttacks.some(a => a.move.id === 'du');
+
+    if (hasXianglong) {
+      const longdun = affordable.find(m => m.id === 'longdun');
+      if (longdun) return makeTargets(longdun, bot, others);
+    }
+    if (hasDu) {
+      const dudun = affordable.find(m => m.id === 'dudun');
+      if (dudun) return makeTargets(dudun, bot, others);
+    }
+    if (hasLongzhua) {
+      const longdun2 = affordable.find(m => m.id === 'longdun');
+      if (longdun2) return makeTargets(longdun2, bot, others);
+    }
+    // 超防: blocks up to 50, only beaten by 降龙十八掌(55)
+    if (maxATK > 30 && !hasXianglong) {
+      const chaofang = affordable.find(m => m.id === 'chaofang');
+      if (chaofang) return makeTargets(chaofang, bot, others);
+    }
+    // 防(30): blocks ≤30 ATK
+    if (maxATK <= 30) {
+      const fang = affordable.find(m => m.id === 'fang');
+      if (fang) return makeTargets(fang, bot, others);
+    }
+    // Fallback: any defense
+    const anyDef = affordable.filter(m => m.def > 0).sort((a, b) => b.def - a.def);
+    if (anyDef.length > 0) return makeTargets(anyDef[0], bot, others);
+  }
+
+  // ============================================================
+  // Rule: Someone 欧 on us → 跺 counter-kill
+  // ============================================================
+  if (incomingOus.length > 0) {
+    const duo = affordable.find(m => m.id === 'duo');
+    if (duo) return makeTargets(duo, bot, others);
+  }
+
+  // ============================================================
+  // Rule: Someone charging + we have 欧 → steal
+  // ============================================================
+  if (chargers.length > 0) {
+    const ou = affordable.find(m => m.specialEffect === 'ou_steal');
+    if (ou) return { moveId: ou.id, targets: [chargers[0].id] };
+  }
+
+  // ============================================================
+  // Rule: Someone vulnerable (not defending) → attack
+  // ============================================================
+  if (vulnerable.length > 0) {
+    // Choose best attack: highest ATK that we can afford
+    const attacks = affordable.filter(m => m.atk > 0).sort((a, b) => b.atk - a.atk);
+    if (attacks.length > 0) {
+      // Target: most dangerous vulnerable player (highest level, then energy)
+      const target = vulnerable.sort((a, b) => b.level - a.level || b.energy - a.energy)[0];
+
+      // Smart attack selection: don't waste 挂机(3气) on a 0-energy weakling
+      for (const atk of attacks) {
+        // If opponent can still 防 or 超防, need to overpower
+        const tSub = pendingMoves.get(target.id);
+        const tMove = tSub ? getMoveById(tSub.moveId) : null;
+        // They already exposed themselves (not defending), so just use enough ATK
+        if (atk.atk > 0 && bot.energy >= atk.cost) {
+          return { moveId: atk.id, targets: [target.id] };
+        }
+      }
+      return { moveId: attacks[0].id, targets: [target.id] };
+    }
+  }
+
+  // ============================================================
+  // Rule: Everyone defending → charge (save energy)
+  // ============================================================
+  return { moveId: 'yun', targets: [] };
+}
+
+// ================================================================
 // Target selection
 // ================================================================
 
