@@ -4,7 +4,7 @@ import { resolveEnergy } from './EnergyResolver';
 import { resolveAttacks } from './MoveResolver';
 import { computeRankings, computeLevelUps, applyLevelUps } from './LevelResolver';
 import { getMoveById } from '../data/moves';
-import { chooseBotMove, recordOpponentMove } from './BotEngine';
+import { chooseBotMove, createBotMemory, recordOpponentMove } from './BotEngine';
 import { RoundResolution, GameState, PlayerInfo } from '../../shared/types';
 
 const THINKING_TIME = 30_000;  // 30 seconds
@@ -87,11 +87,38 @@ export class GameEngine {
 
     this.io.to(room.roomCode).emit('phase_change', { phase: 'thinking', state });
 
-    // Set timer for auto-advance
-    room.clearTimer();
-    room.timer = setTimeout(() => {
-      this.onThinkingTimeout(room);
-    }, THINKING_TIME);
+    // Run bot moves immediately at round start (they think in parallel with humans)
+    this.runBotMoves(room);
+
+    // If everyone already submitted (e.g. all-bot game), go straight to reveal
+    // Only set the thinking timer if the round didn't already advance
+    const advanced = this.checkAllSubmitted(room);
+    if (!advanced) {
+      room.timer = setTimeout(() => {
+        this.onThinkingTimeout(room);
+      }, THINKING_TIME);
+    }
+  }
+
+  /** Run bot moves at the beginning of thinking phase */
+  private runBotMoves(room: GameRoom): void {
+    const alive = room.getAlivePlayers();
+    for (const bot of alive) {
+      if (!bot.isBot) continue;
+      if (room.pendingMoves.has(bot.id)) continue;
+
+      const memory = room.botMemories.get(bot.id) || createBotMemory();
+      const { moveId, targets } = chooseBotMove(
+        bot.botLevel || 'easy', bot, room.getAllPlayers(), room.round, memory
+      );
+      // Validate & submit
+      const moveDef = getMoveById(moveId);
+      if (moveDef && bot.energy >= moveDef.cost) {
+        room.pendingMoves.set(bot.id, { moveId, targets });
+      } else {
+        room.pendingMoves.set(bot.id, { moveId: 'yun', targets: [] });
+      }
+    }
   }
 
   /** Called when a player submits a move */
@@ -142,38 +169,20 @@ export class GameEngine {
     return true;
   }
 
-  /** Check if all humans submitted, then run bots, then reveal */
-  checkAllSubmitted(room: GameRoom): void {
+  /** Check if all players submitted, then reveal. Returns true if round advanced. */
+  checkAllSubmitted(room: GameRoom): boolean {
     const alive = room.getAlivePlayers();
-    const humans = alive.filter(p => !p.isBot);
-    const bots = alive.filter(p => p.isBot);
 
-    // All humans must submit first
-    const allHumansDone = humans.every(p => room.pendingMoves.has(p.id));
-    if (!allHumansDone) return;
-
-    // Run bot moves
-    for (const bot of bots) {
-      if (!room.pendingMoves.has(bot.id)) {
-        const memory = room.botMemories.get(bot.id) || createBotMemory();
-        const { moveId, targets } = chooseBotMove(
-          bot.botLevel || 'easy', bot, room.getAllPlayers(), room.round, memory
-        );
-        // Validate & submit (skip cost check for bots)
-        const moveDef = getMoveById(moveId);
-        if (moveDef && bot.energy >= moveDef.cost) {
-          room.pendingMoves.set(bot.id, { moveId, targets });
-        } else {
-          room.pendingMoves.set(bot.id, { moveId: 'yun', targets: [] });
-        }
-      }
-    }
+    // All alive players (humans + bots) must have submitted
+    const allDone = alive.every(p => room.pendingMoves.has(p.id));
+    if (!allDone) return false;
 
     room.clearTimer();
     this.startRevealPhase(room);
+    return true;
   }
 
-  /** Timeout: auto-submit 运 for missing humans, then run bots */
+  /** Timeout: auto-submit 运 for missing humans (bots already submitted at round start) */
   onThinkingTimeout(room: GameRoom): void {
     if (room.phase !== 'playing') return;
 
