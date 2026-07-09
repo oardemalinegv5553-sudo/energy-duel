@@ -112,8 +112,9 @@ export function createSocketServer(httpServer: HTTPServer) {
         socket.emit('error', { message: '房间已满' });
         return;
       }
-      const botNum = room.getAllPlayers().filter(p => p.isBot).length + 1;
-      const bot = room.addBot(`人机${botNum}`, data.level);
+      const levelLabel = data.level === 'easy' ? '简单人机' : '普通人机';
+      const sameLevel = room.getAllPlayers().filter(p => p.isBot && p.botLevel === data.level).length;
+      const bot = room.addBot(`${levelLabel}${sameLevel + 1}`, data.level);
       socket.join(room.roomCode);
       console.log(`[room] Bot ${bot.nickname} (${data.level}) added to ${room.roomCode}`);
 

@@ -13,17 +13,20 @@ export default function PhaseResolution({ resolution, players }: Props) {
       {/* === 亮招 === */}
       <div className="section-label">亮招</div>
       <div className="reveal-grid">
-        {Object.entries(resolution.moves).map(([pid, m]) => (
-          <div key={pid} className="reveal-card">
-            <span className="reveal-player">{getName(pid)}</span>
-            <span className="reveal-move">{m.moveName}</span>
-            {m.targets.length > 0 && (
-              <span className="reveal-targets">
-                → {m.targets.map(t => getName(t)).join(', ')}
-              </span>
-            )}
-          </div>
-        ))}
+        {players.filter(p => resolution.moves[p.id]).map(p => {
+          const m = resolution.moves[p.id];
+          return (
+            <div key={p.id} className="reveal-card">
+              <span className="reveal-player">{p.nickname}</span>
+              <span className="reveal-move">{m.moveName}</span>
+              {m.targets.length > 0 && (
+                <span className="reveal-targets">
+                  → {m.targets.map(t => getName(t)).join(', ')}
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* 欧链 */}
