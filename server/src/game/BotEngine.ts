@@ -99,32 +99,34 @@ export function chooseBotMove(
   const others = allPlayers.filter(p => p.alive && p.id !== bot.id);
   if (others.length === 0) return { moveId: 'yun', targets: [] };
 
-  // ---- Stuck detection: if stuck in draw loop, force hoarding for big move ----
-  const stuck = detectStuck(memory, others);
-  if (stuck) {
-    memory.strategy = {
-      name: '破局', attackBias: 0.05, defenseBias: 0.5, chargeBias: 4.0, specialBias: 0.3,
-      riskTolerance: 0.95, energyThreshold: 0, aggressionOnLead: 0.1,
-    };
-  } else {
-    // ---- Adaptive switching: every 3 rounds ----
-    memory.roundsSinceAdapt++;
-    if (memory.roundsSinceAdapt >= 3) {
-      memory.roundsSinceAdapt = 0;
-      adaptStrategy(memory, others);
+  // === EASY BOT: complex strategy system (minimax + adaptation + stuck detection) ===
+  if (level === 'easy') {
+    // Stuck detection
+    const stuck = detectStuck(memory, others);
+    if (stuck) {
+      memory.strategy = {
+        name: '破局', attackBias: 0.05, defenseBias: 0.5, chargeBias: 4.0, specialBias: 0.3,
+        riskTolerance: 0.95, energyThreshold: 0, aggressionOnLead: 0.1,
+      };
+    } else {
+      memory.roundsSinceAdapt++;
+      if (memory.roundsSinceAdapt >= 3) {
+        memory.roundsSinceAdapt = 0;
+        adaptStrategy(memory, others);
+      }
     }
+    // Trickster modifier
+    const hasOu = available.some(m => m.specialEffect === 'ou_steal');
+    const hasDuo = available.some(m => m.specialEffect === 'duo_counter');
+    if (memory.isTrickster && (hasOu || hasDuo)) {
+      memory.strategy.specialBias = TRICKSTER_MULTIPLIER;
+    } else {
+      memory.strategy.specialBias = memory.baseStrategy.specialBias;
+    }
+    return easyBot(bot, available, others, round, memory);
   }
 
-  // ---- Apply trickster modifier if 欧/跺 available ----
-  const hasOu = available.some(m => m.specialEffect === 'ou_steal');
-  const hasDuo = available.some(m => m.specialEffect === 'duo_counter');
-  if (memory.isTrickster && (hasOu || hasDuo)) {
-    memory.strategy.specialBias = TRICKSTER_MULTIPLIER;
-  } else {
-    memory.strategy.specialBias = memory.baseStrategy.specialBias;
-  }
-
-  if (level === 'easy') return easyBot(bot, available, others, memory);
+  // === NORMAL BOT: score all → top-N random (unpredictable within reason) ===
   return normalBot(bot, available, others, round, memory);
 }
 
@@ -193,53 +195,10 @@ function adaptStrategy(memory: BotMemory, others: PlayerState[]): void {
 // ================================================================
 // EASY — tendency-based random
 // ================================================================
+// ================================================================
+// EASY — complex strategy (minimax + adaptation + stuck detection + exploration)
+// ================================================================
 function easyBot(
-  bot: PlayerState, available: MoveDef[], others: PlayerState[],
-  _round: number, memory: BotMemory
-): { moveId: string; targets: string[] } {
-  const affordable = available.filter(m => bot.energy >= m.cost);
-  if (affordable.length === 0) { memory.consecutiveDefenses = 0; return { moveId: 'yun', targets: [] }; }
-
-  const tendencies = getOpponentTendencies(memory, others);
-  const forceNoDef = memory.consecutiveDefenses >= 2;
-
-  const attacks = affordable.filter(m => m.atk > 0);
-  const defenses = affordable.filter(m => m.def > 0 || m.type === 'special_defense');
-  const specials = affordable.filter(m => m.type === 'special');
-  const charges = affordable.filter(m => m.type === 'charge');
-
-  let atkW = 50, defW = 25, spW = 15, chW = 10;
-  if (tendencies.attack > 0.5) { defW += 20; atkW -= 15; }
-  if (tendencies.defense > 0.4) { chW += 15; atkW -= 10; }
-  atkW = Math.round(atkW * memory.strategy.attackBias);
-  defW = Math.round(defW * memory.strategy.defenseBias);
-  chW = Math.round(chW * memory.strategy.chargeBias);
-  spW = Math.round(spW * memory.strategy.specialBias);
-  if (forceNoDef) { defW = 0; atkW += 20; }
-
-  const totalW = atkW + defW + spW + chW;
-  const roll = Math.random() * totalW;
-  let pick: MoveDef | undefined;
-
-  if (roll < atkW && attacks.length > 0) {
-    pick = randPick(attacks); memory.consecutiveDefenses = 0;
-  } else if (roll < atkW + defW && defenses.length > 0 && !forceNoDef) {
-    pick = randPick(defenses); memory.consecutiveDefenses++;
-  } else if (roll < atkW + defW + spW && specials.length > 0) {
-    pick = randPick(specials); memory.consecutiveDefenses = 0;
-  } else {
-    pick = randPick(charges.length > 0 ? charges : affordable);
-    memory.consecutiveDefenses = 0;
-  }
-  if (!pick) pick = randPick(affordable);
-  return makeTargets(pick, bot, others);
-}
-
-// ================================================================
-// NORMAL — recursive minimax + strategy
-// ================================================================
-
-function normalBot(
   bot: PlayerState, available: MoveDef[], others: PlayerState[],
   round: number, memory: BotMemory
 ): { moveId: string; targets: string[] } {
@@ -266,27 +225,63 @@ function normalBot(
     move: m,
     score: minimaxEval(m, oppCandidates, bot, opp, RECURSE_DEPTH, memory),
   }));
-
   scored.sort((a, b) => b.score - a.score);
 
-  // ---- Human-like exploration (12%) ----
+  // 12% exploration
   const explore = Math.random();
   if (explore < 0.12) {
-    if (explore < 0.04 && affordable.length >= 2) {
-      // 4%: deliberately pick the LOWEST-scored move ("try the opposite")
-      return makeTargets(scored[scored.length - 1].move, bot, others);
-    }
+    if (explore < 0.04 && scored.length >= 2) return makeTargets(scored[scored.length - 1].move, bot, others);
     if (explore < 0.08) {
-      // 4%: pick a move I haven't used recently
       const recentIds = new Set((memory.opponentHistory.get(opp.id) || []).slice(-3));
       const novel = affordable.filter(m => !recentIds.has(m.id));
       if (novel.length > 0) return makeTargets(randPick(novel), bot, others);
     }
-    // 4%: pure random
     return makeTargets(randPick(affordable), bot, others);
   }
 
   return makeTargets(scored[0].move, bot, others);
+}
+
+// ================================================================
+// NORMAL — score all → top-N equally random (genuinely unpredictable)
+// ================================================================
+
+function topNForLevel(level: number): number {
+  if (level <= 2) return 3;
+  if (level <= 5) return 4;
+  if (level <= 10) return 5;
+  return 6;
+}
+
+function normalBot(
+  bot: PlayerState, available: MoveDef[], others: PlayerState[],
+  round: number, memory: BotMemory
+): { moveId: string; targets: string[] } {
+  const affordable = available.filter(m => bot.energy >= m.cost);
+  if (affordable.length === 0) return { moveId: 'yun', targets: [] };
+
+  if (round === 1) {
+    const r1 = affordable.filter(m => ['yun', 'ou', 'duo'].includes(m.id));
+    return makeTargets(r1.length > 0 ? randPick(r1) : getMoveById('yun')!, bot, others);
+  }
+
+  const opp = pickPrimaryTarget(bot, others, memory);
+  const oppAvailable = getMovesByLevel(opp.level).filter(m => opp.energy >= m.cost);
+  const oppCandidates = oppAvailable.length > 0
+    ? rankCandidates(oppAvailable, opp, bot, memory).slice(0, CANDIDATE_COUNT)
+    : [getMoveById('yun')!];
+
+  // Score every affordable move
+  const scored = affordable.map(m => ({
+    move: m,
+    score: minimaxEval(m, oppCandidates, bot, opp, RECURSE_DEPTH, memory),
+  }));
+  scored.sort((a, b) => b.score - a.score);
+
+  // Top-N equally random — not picking the "best", just among reasonable options
+  const N = Math.min(topNForLevel(bot.level), scored.length);
+  const pool = scored.slice(0, N);
+  return makeTargets(randPick(pool).move, bot, others);
 }
 
 // ================================================================
@@ -506,8 +501,11 @@ export function recordOpponentMove(memory: BotMemory, opponentId: string, moveId
 // ================================================================
 
 function makeTargets(move: MoveDef, _bot: PlayerState, others: PlayerState[]): { moveId: string; targets: string[] } {
-  if (move.targetType === 'none' || move.targetType === 'all') {
+  if (move.targetType === 'none') {
     return { moveId: move.id, targets: [] };
+  }
+  if (move.targetType === 'all') {
+    return { moveId: move.id, targets: others.map(o => o.id) };
   }
   if (move.targetType === 'single') {
     return { moveId: move.id, targets: [randPick(others).id] };

@@ -139,11 +139,11 @@ function randInt(max: number): number { return Math.floor(Math.random() * max); 
 
 // ===== Run =====
 console.log('═'.repeat(55));
-console.log('🤖 双人对战 ×3 — Lv.4');
+console.log('🤖 普通人机 双人对战 ×3 — Lv.4');
 console.log('═'.repeat(55));
 for (let i = 1; i <= 3; i++) runGame(i, 4, 2);
 
 console.log('\n\n' + '═'.repeat(55));
-console.log('🤖 三人混战 ×3 — Lv.4');
+console.log('🤖 普通人机 三人混战 ×3 — Lv.4');
 console.log('═'.repeat(55));
 for (let i = 1; i <= 3; i++) runGame(i, 4, 3);
