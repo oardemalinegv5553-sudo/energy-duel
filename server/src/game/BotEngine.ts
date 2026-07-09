@@ -260,28 +260,62 @@ function normalBot(
   const affordable = available.filter(m => bot.energy >= m.cost);
   if (affordable.length === 0) return { moveId: 'yun', targets: [] };
 
+  // Round 1 probe
   if (round === 1) {
     const r1 = affordable.filter(m => ['yun', 'ou', 'duo'].includes(m.id));
     return makeTargets(r1.length > 0 ? randPick(r1) : getMoveById('yun')!, bot, others);
   }
 
-  const opp = pickPrimaryTarget(bot, others, memory);
+  const opp = others[0];
+
+  // === Special case: both at 0 energy, no 欧 → only 运 ===
+  const hasOu = available.some(m => m.specialEffect === 'ou_steal');
+  if (bot.energy < 0.01 && opp.energy < 0.01 && !hasOu) {
+    return { moveId: 'yun', targets: [] };
+  }
+
+  // === Score all affordable moves via minimax ===
   const oppAvailable = getMovesByLevel(opp.level).filter(m => opp.energy >= m.cost);
   const oppCandidates = oppAvailable.length > 0
     ? rankCandidates(oppAvailable, opp, bot, memory).slice(0, CANDIDATE_COUNT)
     : [getMoveById('yun')!];
 
-  // Score every affordable move
   const scored = affordable.map(m => ({
     move: m,
     score: minimaxEval(m, oppCandidates, bot, opp, RECURSE_DEPTH, memory),
   }));
   scored.sort((a, b) => b.score - a.score);
 
-  // Top-N equally random — not picking the "best", just among reasonable options
+  // === Take top N via level-scaling ===
   const N = Math.min(topNForLevel(bot.level), scored.length);
-  const pool = scored.slice(0, N);
-  return makeTargets(randPick(pool).move, bot, others);
+  let pool = scored.slice(0, N).map(s => s.move);
+
+  // === Contextual filtering: remove genuinely useless moves ===
+
+  // 1. Opponent can't attack → defense is pointless
+  const oppCanAttack = oppAvailable.some(m => m.atk > 0);
+  if (!oppCanAttack) {
+    pool = pool.filter(m => !(m.def > 0 || m.type === 'special_defense'));
+  }
+
+  // 2. Single-target attacks: only keep the highest-ATK one
+  const singles = pool.filter(m => m.targetType === 'single' && m.atk > 0);
+  if (singles.length > 1) {
+    singles.sort((a, b) => b.atk - a.atk);
+    const bestATK = singles[0].atk;
+    pool = pool.filter(m => m.targetType !== 'single' || m.atk <= 0 || m.atk === bestATK);
+  }
+
+  // 3. If nothing left after filter → 运
+  if (pool.length === 0) {
+    return { moveId: 'yun', targets: [] };
+  }
+
+  // 1 reasonable → use it. 2+ → equal random.
+  if (pool.length === 1) {
+    return makeTargets(pool[0], bot, others);
+  }
+  return makeTargets(randPick(pool), bot, others);
 }
 
 // ================================================================
