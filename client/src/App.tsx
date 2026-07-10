@@ -160,6 +160,10 @@ export default function App() {
     setView('auth');
   };
 
+  const handleGoToAuth = () => {
+    setView('auth');
+  };
+
   // ----
 
   const handleLeave = () => {
@@ -200,6 +204,7 @@ export default function App() {
           isLoggedIn={!!authAccountId}
           username={authUsername}
           onLogout={handleLogout}
+          onGoToAuth={handleGoToAuth}
         />
       )}
 

@@ -10,9 +10,10 @@ interface Props {
   isLoggedIn: boolean;
   username: string | null;
   onLogout: () => void;
+  onGoToAuth: () => void;
 }
 
-export default function Lobby({ socket, onError, onRoomCreated, isLoggedIn, username, onLogout }: Props) {
+export default function Lobby({ socket, onError, onRoomCreated, isLoggedIn, username, onLogout, onGoToAuth }: Props) {
   const [nickname, setNickname] = useState(() =>
     // Auto-fill from account username if logged in
     username || localStorage.getItem('energy-duel-nickname') || ''
@@ -98,6 +99,7 @@ export default function Lobby({ socket, onError, onRoomCreated, isLoggedIn, user
       {!isLoggedIn && (
         <div className="auth-status guest">
           <span>🎭 游客模式</span>
+          <button className="btn-ghost btn-xs" onClick={onGoToAuth}>登录/注册</button>
         </div>
       )}
 
