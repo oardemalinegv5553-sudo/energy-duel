@@ -641,12 +641,13 @@ export function chooseHardBotMove(
     const strongest = incomingAttacks.sort((a, b) => b.move.atk - a.move.atk)[0];
 
     // Check if we can counter-attack instead of defending
+    // Only safe when: (1) exactly one attacker, (2) we can kill (ATK diff ≥ 9)
     const myAttacks = affordable.filter(m => m.atk > 0).sort((a, b) => b.atk - a.atk);
-    if (myAttacks.length > 0) {
+    if (incomingAttacks.length === 1 && myAttacks.length > 0) {
       const myBest = myAttacks[0];
-      // 对攻规则: |ATK差|≥9 → 低的一方死; <9 → 平局
-      // 我方 ATK ≥ 对方 ATK → 我方不会死（最差平局）
-      if (myBest.atk >= maxATK) {
+      // 对攻规则: |ATK差|≥9 → 低的一方死; <9 → 平局(双方存活)
+      // 要求 ATK 比对方高 ≥9 才反杀，确保击杀不平局
+      if (myBest.atk >= maxATK + 9) {
         return { moveId: myBest.id, targets: [strongest.attacker.id] };
       }
     }
