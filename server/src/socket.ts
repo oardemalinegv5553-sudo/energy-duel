@@ -84,10 +84,18 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
       }
 
       const player = room.addPlayer(data.nickname);
+
+      // Restore previous level for logged-in players rejoining same room
+      const acctId: string | undefined = (socket as any).accountId;
+      if (acctId && room.previousLevels.has(acctId)) {
+        player.level = room.previousLevels.get(acctId)!;
+        room.previousLevels.delete(acctId);
+      }
+
       socket.join(room.roomCode);
       socketRooms.set(socket.id, {
         roomCode: room.roomCode, playerId: player.id,
-        accountId: (socket as any).accountId, nickname: data.nickname,
+        accountId: acctId, nickname: data.nickname,
       });
 
       ack({ success: true, playerId: player.id, roomType: room.roomType });
@@ -109,16 +117,19 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
         return;
       }
 
-      // Check if player is in grace period
+      // Check if player is still in the room (game disconnect) or in grace period
+      const playerExists = room.players.has(playerId);
       const timer = room.disconnectedPlayers.get(playerId);
-      if (!timer) {
+      if (!playerExists && !timer) {
         ack({ success: false, error: '已退出房间，请重新加入' });
         return;
       }
 
-      // Cancel kick timer — player is back
-      clearTimeout(timer);
-      room.disconnectedPlayers.delete(playerId);
+      // Clean up timer if any
+      if (timer) {
+        clearTimeout(timer);
+        room.disconnectedPlayers.delete(playerId);
+      }
 
       // Reconnect new socket to existing player
       socket.join(roomCode);
@@ -272,32 +283,50 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
       s.leave(info.roomCode);
       socketRooms.delete(s.id);
 
-      // Accidental disconnect during game → 30s grace period
-      if (!intentional && room.phase === 'playing') {
+      const player = room.players.get(info.playerId);
+      const acctId = info.accountId;
+
+      if (intentional) {
+        // Save level for logged-in players (can restore on rejoin)
+        if (acctId && player && room.phase === 'waiting') {
+          room.previousLevels.set(acctId, player.level);
+        }
+        removePlayerFromRoom(room, info.playerId);
+        return;
+      }
+
+      // Accidental disconnect during game → stay in room, auto-接管
+      if (room.phase === 'playing') {
+        // Host transfer: pass to next alive human
+        if (info.playerId === room.hostId) {
+          const nextHuman = room.getAlivePlayers().find(p => !p.isBot && p.id !== info.playerId);
+          if (nextHuman) {
+            room.hostId = nextHuman.id;
+            console.log(`[room] host transferred to ${nextHuman.nickname}`);
+          }
+          // If no other human alive, host stays with disconnected player
+        }
+
+        // Clear any previous grace timer, but DON'T set a new one
         const existing = room.disconnectedPlayers.get(info.playerId);
         if (existing) clearTimeout(existing);
-
-        const timer = setTimeout(() => {
-          room.disconnectedPlayers.delete(info.playerId);
-          removePlayerFromRoom(room, info.playerId);
-        }, 30_000);
-        room.disconnectedPlayers.set(info.playerId, timer);
+        room.disconnectedPlayers.delete(info.playerId);
 
         io.to(info.roomCode).emit('player_list', {
           players: room.getPlayerInfos(),
           hostId: room.hostId,
         });
-        console.log(`[room] ${info.nickname} disconnected — 30s grace period`);
+        console.log(`[room] ${info.nickname} disconnected during game — auto-接管`);
         return;
       }
 
-      // Intentional leave or not playing → immediate removal
+      // Not playing → remove immediately
       removePlayerFromRoom(room, info.playerId);
     }
 
     function removePlayerFromRoom(room: GameRoom, playerId: string) {
       const isEmpty = room.removePlayer(playerId);
-      // Also clean up any grace period timer
+      // Clean up grace timer if any
       const t = room.disconnectedPlayers.get(playerId);
       if (t) { clearTimeout(t); room.disconnectedPlayers.delete(playerId); }
 

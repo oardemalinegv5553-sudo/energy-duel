@@ -126,6 +126,10 @@ export default function App() {
       if (data.resolution) {
         setResolution(data.resolution);
       }
+      // If game is active, switch to playing view (handles rejoin during game)
+      if (data.phase === 'thinking' || data.phase === 'result') {
+        setView('playing');
+      }
     });
 
     socket.on('game_over', (data) => {

@@ -7,7 +7,7 @@ import { getMoveById } from '../data/moves';
 import { chooseBotMove, chooseHardBotMove, createBotMemory, recordOpponentMove } from './BotEngine';
 import { RoundResolution, GameState, PlayerInfo } from '../../../shared/types';
 
-const THINKING_TIME = 30_000;  // 30 seconds
+const THINKING_TIME = 15_000;  // 15 seconds
 const RESULT_TIME = 5_000;     // 5 seconds combined reveal+result
 
 /**

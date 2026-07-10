@@ -24,6 +24,7 @@ export class GameRoom {
   botMemories: Map<string, BotMemory> = new Map();
   timer: ReturnType<typeof setTimeout> | null = null;
   disconnectedPlayers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  previousLevels: Map<string, number> = new Map();  // accountId → level for rejoiners
 
   constructor(roomCode: string, roomType: RoomType = 'duo') {
     this.roomCode = roomCode;
