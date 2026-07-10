@@ -1,15 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
 import { GamePhase, GameState, PlayerInfo, RoundResolution, Ranking, LevelUp, RoomType } from '../../shared/types';
 import { socket, connectSocket } from './socket';
+import { getAuth, clearAuth } from './auth';
+import AuthPanel from './components/AuthPanel';
 import Lobby from './components/Lobby';
 import WaitingRoom from './components/WaitingRoom';
 import GameScreen from './components/GameScreen';
 import GameOver from './components/GameOver';
 
-type View = 'lobby' | 'waiting' | 'playing' | 'finished';
+type View = 'auth' | 'lobby' | 'waiting' | 'playing' | 'finished';
 
 export default function App() {
-  const [view, setView] = useState<View>('lobby');
+  const [view, setView] = useState<View>(() => {
+    // If we have a saved token, start at lobby (server will validate via auth_info)
+    const saved = getAuth();
+    return saved ? 'lobby' : 'auth';
+  });
   const [roomCode, setRoomCode] = useState('');
   const [playerId, setPlayerId] = useState('');
   const [hostId, setHostId] = useState('');
@@ -27,6 +33,15 @@ export default function App() {
   } | null>(null);
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
+
+  // Auth state
+  const [authAccountId, setAuthAccountId] = useState<string | null>(
+    () => getAuth()?.accountId || null
+  );
+  const [authUsername, setAuthUsername] = useState<string | null>(
+    () => getAuth()?.username || null
+  );
+
   const setupDone = useRef(false);
 
   // ---- Socket connection + event handlers ----
@@ -44,6 +59,19 @@ export default function App() {
     socket.on('disconnect', () => {
       console.log('[socket] disconnected');
       setConnected(false);
+    });
+
+    socket.on('auth_info', (data) => {
+      if (data.accountId) {
+        // Server confirmed our token is valid
+        setAuthAccountId(data.accountId);
+      } else {
+        // Token invalid or expired — clear auth state
+        clearAuth();
+        setAuthAccountId(null);
+        setAuthUsername(null);
+        if (view !== 'auth') setView('auth');
+      }
     });
 
     socket.on('room_created', (data) => {
@@ -95,12 +123,12 @@ export default function App() {
     socket.on('room_closed', () => {
       setView('lobby');
       setError('房间已关闭');
-      setupDone.current = false;
     });
 
     return () => {
       socket.off('connect');
       socket.off('disconnect');
+      socket.off('auth_info');
       socket.off('room_created');
       socket.off('player_list');
       socket.off('game_started');
@@ -110,6 +138,31 @@ export default function App() {
       socket.off('room_closed');
     };
   }, []);
+
+  // ---- Auth handlers ----
+
+  const handleAuthSuccess = (accountId: string, username: string) => {
+    setAuthAccountId(accountId);
+    setAuthUsername(username);
+    setView('lobby');
+  };
+
+  const handleGuest = () => {
+    setAuthAccountId(null);
+    setAuthUsername(null);
+    setView('lobby');
+  };
+
+  const handleLogout = () => {
+    clearAuth();
+    setAuthAccountId(null);
+    setAuthUsername(null);
+    setView('auth');
+    // Disconnect and reconnect without token
+    import('./socket').then(({ updateAuthToken }) => updateAuthToken(undefined));
+  };
+
+  // ----
 
   const handleLeave = () => {
     socket.emit('leave_room');
@@ -129,6 +182,13 @@ export default function App() {
       {!connected && <div className="error-toast">连接服务器中…</div>}
       {error && <div className="error-toast">{error}</div>}
 
+      {view === 'auth' && (
+        <AuthPanel
+          onAuthSuccess={handleAuthSuccess}
+          onGuest={handleGuest}
+        />
+      )}
+
       {view === 'lobby' && (
         <Lobby
           socket={socket}
@@ -139,6 +199,9 @@ export default function App() {
             setRoomType(rtype);
             setView('waiting');
           }}
+          isLoggedIn={!!authAccountId}
+          username={authUsername}
+          onLogout={handleLogout}
         />
       )}
 

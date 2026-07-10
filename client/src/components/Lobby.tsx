@@ -7,11 +7,15 @@ interface Props {
   socket: Socket<ServerToClientEvents, ClientToServerEvents>;
   onError: (msg: string) => void;
   onRoomCreated: (roomCode: string, playerId: string, roomType: RoomType) => void;
+  isLoggedIn: boolean;
+  username: string | null;
+  onLogout: () => void;
 }
 
-export default function Lobby({ socket, onError, onRoomCreated }: Props) {
+export default function Lobby({ socket, onError, onRoomCreated, isLoggedIn, username, onLogout }: Props) {
   const [nickname, setNickname] = useState(() =>
-    localStorage.getItem('energy-duel-nickname') || ''
+    // Auto-fill from account username if logged in
+    username || localStorage.getItem('energy-duel-nickname') || ''
   );
   const [joinCode, setJoinCode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -84,6 +88,18 @@ export default function Lobby({ socket, onError, onRoomCreated }: Props) {
 
       <h1 className="lobby-title">蓄气对决</h1>
       <p className="lobby-subtitle">在线拍手对战</p>
+
+      {isLoggedIn && username && (
+        <div className="auth-status">
+          <span>👤 {username}</span>
+          <button className="btn-ghost btn-xs" onClick={onLogout}>退出</button>
+        </div>
+      )}
+      {!isLoggedIn && (
+        <div className="auth-status guest">
+          <span>🎭 游客模式</span>
+        </div>
+      )}
 
       <div className="lobby-form">
         <label className="lobby-label">昵称</label>

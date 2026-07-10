@@ -567,6 +567,73 @@ html, body {
   padding-left: 18px;
   font-size: 13px; line-height: 1.7;
 }
+
+/* ===== Auth Panel ===== */
+.auth-panel {
+  max-width: 360px; margin: 60px auto 0; padding: 32px 24px;
+  text-align: center;
+}
+.auth-panel .game-title {
+  font-size: 28px; color: var(--accent); margin-bottom: 24px;
+}
+.auth-tabs {
+  display: flex; gap: 0; margin-bottom: 20px;
+  border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--border);
+}
+.auth-tabs .tab-btn {
+  flex: 1; padding: 10px 0; font-size: 14px; cursor: pointer;
+  background: var(--bg-card); color: var(--text-dim); border: none;
+  transition: all 0.2s;
+}
+.auth-tabs .tab-btn.active {
+  background: var(--accent); color: #fff;
+}
+.auth-form {
+  display: flex; flex-direction: column; gap: 12px;
+}
+.auth-form .input {
+  padding: 10px 12px; font-size: 15px;
+  background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  outline: none; transition: border-color 0.2s;
+}
+.auth-form .input:focus {
+  border-color: var(--accent);
+}
+.auth-form .input::placeholder {
+  color: var(--text-dim);
+}
+.auth-error {
+  color: #ff6b6b; font-size: 13px; padding: 4px 0;
+}
+.auth-divider {
+  margin: 20px 0; display: flex; align-items: center; gap: 12px;
+  color: var(--text-dim); font-size: 13px;
+}
+.auth-divider::before, .auth-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+
+/* ===== Auth Status Bar ===== */
+.auth-status {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; padding: 6px 16px; margin-bottom: 8px;
+  font-size: 13px; color: var(--text-dim);
+  background: var(--bg-card); border-radius: 20px;
+  max-width: 240px; margin-left: auto; margin-right: auto;
+}
+.auth-status.guest {
+  color: var(--text-dim);
+}
+.auth-status .btn-xs {
+  padding: 2px 8px; font-size: 11px; cursor: pointer;
+  background: transparent; color: var(--text-dim);
+  border: 1px solid var(--border); border-radius: 4px;
+}
+.auth-status .btn-xs:hover {
+  color: #ff6b6b; border-color: #ff6b6b;
+}
 .modal-content li { margin-bottom: 2px; }
 .modal-content .btn { margin-top: 16px; width: 100%; }
 .moves-table-wrap { max-height: 200px; overflow-y: auto; margin: 8px 0; }

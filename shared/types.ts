@@ -130,4 +130,5 @@ export interface ServerToClientEvents {
   game_over: (data: { rankings: Ranking[]; levelUps: LevelUp[]; players: PlayerInfo[] }) => void;
   error: (data: { message: string }) => void;
   room_closed: () => void;
+  auth_info: (data: { accountId: string | null }) => void;
 }

@@ -3,8 +3,9 @@ import { Server as SocketIOServer } from 'socket.io';
 import { RoomManager } from './room/RoomManager';
 import { GameEngine } from './game/GameEngine';
 import { ClientToServerEvents, ServerToClientEvents } from '../../shared/types';
+import { AuthManager } from './auth/AuthManager';
 
-export function createSocketServer(httpServer: HTTPServer) {
+export function createSocketServer(httpServer: HTTPServer, authManager: AuthManager) {
   const io = new SocketIOServer<ClientToServerEvents, ServerToClientEvents>(httpServer, {
     cors: {
       origin: '*',
@@ -12,14 +13,31 @@ export function createSocketServer(httpServer: HTTPServer) {
     },
   });
 
+  // ---- Auth middleware ----
+  io.use((socket, next) => {
+    const token = socket.handshake.auth?.token;
+    if (token && typeof token === 'string') {
+      const session = authManager.validateSession(token);
+      if (session) {
+        (socket as any).accountId = session.accountId;
+        (socket as any).accountUsername = session.username;
+      }
+    }
+    next(); // Always allow — invalid/missing token = guest
+  });
+
   const roomManager = new RoomManager();
   const gameEngine = new GameEngine(io);
 
   // Track which socket is in which room and which player
-  const socketRooms = new Map<string, { roomCode: string; playerId: string }>();
+  const socketRooms = new Map<string, { roomCode: string; playerId: string; accountId?: string; nickname: string }>();
 
   io.on('connection', (socket) => {
-    console.log(`[socket] connected: ${socket.id}`);
+    const accountId: string | undefined = (socket as any).accountId;
+    console.log(`[socket] connected: ${socket.id}${accountId ? ` [auth:${accountId}]` : ' [guest]'}`);
+
+    // Send auth status to client
+    socket.emit('auth_info', { accountId: accountId || null });
 
     // ---- Room Creation ----
     socket.on('create_room', (data, ack) => {
@@ -27,7 +45,10 @@ export function createSocketServer(httpServer: HTTPServer) {
       const player = room.addPlayer(data.nickname);
 
       socket.join(room.roomCode);
-      socketRooms.set(socket.id, { roomCode: room.roomCode, playerId: player.id });
+      socketRooms.set(socket.id, {
+        roomCode: room.roomCode, playerId: player.id,
+        accountId: (socket as any).accountId, nickname: data.nickname,
+      });
 
       ack({ roomCode: room.roomCode, playerId: player.id });
 
@@ -36,7 +57,7 @@ export function createSocketServer(httpServer: HTTPServer) {
         hostId: room.hostId,
       });
 
-      console.log(`[room] ${data.nickname} created ${room.roomType} room ${room.roomCode} (initial Lv.${room.initialLevel})`);
+      console.log(`[room] ${data.nickname}${(socket as any).accountId ? ` [${(socket as any).accountId}]` : ''} created ${room.roomType} room ${room.roomCode} (initial Lv.${room.initialLevel})`);
     });
 
     // ---- Join Room ----
@@ -63,7 +84,10 @@ export function createSocketServer(httpServer: HTTPServer) {
 
       const player = room.addPlayer(data.nickname);
       socket.join(room.roomCode);
-      socketRooms.set(socket.id, { roomCode: room.roomCode, playerId: player.id });
+      socketRooms.set(socket.id, {
+        roomCode: room.roomCode, playerId: player.id,
+        accountId: (socket as any).accountId, nickname: data.nickname,
+      });
 
       ack({ success: true, playerId: player.id, roomType: room.roomType });
 
