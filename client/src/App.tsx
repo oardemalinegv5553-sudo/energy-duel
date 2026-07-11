@@ -124,6 +124,9 @@ export default function App() {
         setDeadline(data.state.deadline || 0);
       }
       if (data.resolution) {
+        if ((data.resolution as any).teamKillMessages) {
+          console.log('[team-kill] received:', (data.resolution as any).teamKillMessages);
+        }
         setResolution(data.resolution);
       }
       // If game is active, switch to playing view (handles rejoin during game)
