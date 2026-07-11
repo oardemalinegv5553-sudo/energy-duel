@@ -18,7 +18,7 @@ export default function WaitingRoom({ roomCode, players, isHost, playerId, roomT
   const isTeamMode = roomType === 'team';
   const [showBotMenu, setShowBotMenu] = useState(false);
   const hasHardBot = players.some(p => p.isBot && p.botLevel === 'hard');
-  const canAddBot = isHost && players.length < maxPlayers && !isTeamMode;
+  const canAddBot = isHost && players.length < maxPlayers;
 
   const handleStart = () => {
     socket.emit('start_game');
@@ -98,16 +98,24 @@ export default function WaitingRoom({ roomCode, players, isHost, playerId, roomT
           <div className="bot-controls">
             {showBotMenu ? (
               <div className="bot-menu">
-                <button className="btn btn-sm" onClick={() => addBot('easy')}>
-                  🤖 简单人机
-                </button>
-                <button className="btn btn-sm" onClick={() => addBot('normal')}>
-                  🧠 普通人机
-                </button>
-                {!hasHardBot && (
-                  <button className="btn btn-sm" onClick={() => addBot('hard')}>
-                    💀 困难人机
+                {isTeamMode ? (
+                  <button className="btn btn-sm" onClick={() => addBot('normal')}>
+                    🧠 普通人机
                   </button>
+                ) : (
+                  <>
+                    <button className="btn btn-sm" onClick={() => addBot('easy')}>
+                      🤖 简单人机
+                    </button>
+                    <button className="btn btn-sm" onClick={() => addBot('normal')}>
+                      🧠 普通人机
+                    </button>
+                    {!hasHardBot && (
+                      <button className="btn btn-sm" onClick={() => addBot('hard')}>
+                        💀 困难人机
+                      </button>
+                    )}
+                  </>
                 )}
                 <button className="btn btn-ghost btn-sm" onClick={() => setShowBotMenu(false)}>
                   取消

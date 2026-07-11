@@ -213,8 +213,8 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
       if (!info) return;
       const room = roomManager.getRoom(info.roomCode);
       if (!room) return;
-      if (room.roomType === 'team') {
-        socket.emit('error', { message: '组队模式暂不支持人机' });
+      if (room.roomType === 'team' && data.level !== 'normal') {
+        socket.emit('error', { message: '组队模式仅支持普通人机' });
         return;
       }
       if (room.hostId !== info.playerId) {
