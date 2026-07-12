@@ -70,8 +70,13 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
         return;
       }
       if (room.phase !== 'waiting') {
-        ack({ success: false, error: '游戏已开始，无法加入' });
-        return;
+        // Allow previous members to rejoin anytime
+        const acctId = (socket as any).accountId;
+        const wasMember = acctId && room.previousLevels.has(acctId);
+        if (!wasMember) {
+          ack({ success: false, error: '游戏已开始，无法加入' });
+          return;
+        }
       }
       if (room.players.size >= room.maxPlayers) {
         ack({ success: false, error: `房间已满（最多 ${room.maxPlayers} 人）` });
@@ -174,6 +179,10 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
       if (!info) return;
       const room = roomManager.getRoom(info.roomCode);
       if (!room) return;
+      if (room.phase !== 'waiting') {
+        socket.emit('error', { message: room.phase === 'playing' ? '游戏正在进行中' : '游戏已结束，请点再来一局' });
+        return;
+      }
       if (room.hostId !== info.playerId) {
         socket.emit('error', { message: '只有房主可以开始游戏' });
         return;
