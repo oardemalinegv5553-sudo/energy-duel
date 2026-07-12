@@ -95,9 +95,15 @@ export function chooseBotMove(
   level: BotLevel, bot: PlayerState, allPlayers: PlayerState[],
   round: number, memory: BotMemory
 ): { moveId: string; targets: string[] } {
-  const available = getMovesByLevel(bot.level);
+  const allAvailable = getMovesByLevel(bot.level);
   const others = allPlayers.filter(p => p.alive && p.id !== bot.id);
   if (others.length === 0) return { moveId: 'yun', targets: [] };
+
+  // Team mode: filter out AOE attacks (would hit teammates)
+  const isTeamMode = bot.team !== undefined;
+  const available = isTeamMode
+    ? allAvailable.filter(m => m.targetType !== 'all')
+    : allAvailable;
 
   // === EASY BOT: complex strategy system (minimax + adaptation + stuck detection) ===
   if (level === 'easy') {
@@ -600,9 +606,17 @@ export function chooseHardBotMove(
   allPlayers: PlayerState[],
   pendingMoves: Map<string, { moveId: string; targets: string[] }>
 ): { moveId: string; targets: string[] } {
-  const available = getMovesByLevel(bot.level);
+  const allAvailable = getMovesByLevel(bot.level);
+  // Team mode: filter out AOE attacks (would hit teammates)
+  const isTeamMode = bot.team !== undefined;
+  const available = isTeamMode
+    ? allAvailable.filter(m => m.targetType !== 'all')
+    : allAvailable;
   const affordable = available.filter(m => bot.energy >= m.cost);
   const others = allPlayers.filter(p => p.alive && p.id !== bot.id);
+  // Team mode: only consider opponents for targeting
+  const opponents = isTeamMode ? others.filter(o => o.team !== bot.team) : others;
+  if (opponents.length === 0 && isTeamMode) return { moveId: 'yun', targets: [] };
   if (others.length === 0) return { moveId: 'yun', targets: [] };
 
   // ---- Analyze what everyone else is doing ----
@@ -630,6 +644,16 @@ export function chooseHardBotMove(
     const isGuanyin = move.specialEffect === 'guanyin_buff';
     if (!isDefending && !isGuanyin) {
       vulnerable.push(other);
+    }
+  }
+
+  // Team mode: filter out teammates from offensive targeting lists
+  if (isTeamMode) {
+    for (let i = chargers.length - 1; i >= 0; i--) {
+      if (chargers[i].team === bot.team) chargers.splice(i, 1);
+    }
+    for (let i = vulnerable.length - 1; i >= 0; i--) {
+      if (vulnerable[i].team === bot.team) vulnerable.splice(i, 1);
     }
   }
 
@@ -731,7 +755,7 @@ export function chooseHardBotMove(
   // At this point: no one is attacking us, no chargers, no vulnerable targets.
   // Everyone is using some form of defense. Check if we can punch through.
 
-  const defenders = others.filter(o => {
+  const defenders = (isTeamMode ? opponents : others).filter(o => {
     const sub = pendingMoves.get(o.id);
     if (!sub) return false;
     const m = getMoveById(sub.moveId);
@@ -797,17 +821,23 @@ export function chooseHardBotMove(
 // Target selection
 // ================================================================
 
-function makeTargets(move: MoveDef, _bot: PlayerState, others: PlayerState[]): { moveId: string; targets: string[] } {
+function makeTargets(move: MoveDef, bot: PlayerState, others: PlayerState[]): { moveId: string; targets: string[] } {
+  // Team mode: only target opponents (not teammates)
+  const targets = bot.team !== undefined
+    ? others.filter(o => o.team !== bot.team)
+    : others;
+
   if (move.targetType === 'none') {
     return { moveId: move.id, targets: [] };
   }
   if (move.targetType === 'all') {
-    return { moveId: move.id, targets: others.map(o => o.id) };
+    return { moveId: move.id, targets: targets.map(o => o.id) };
   }
   if (move.targetType === 'single') {
-    return { moveId: move.id, targets: [randPick(others).id] };
+    if (targets.length === 0) return { moveId: 'yun', targets: [] };
+    return { moveId: move.id, targets: [randPick(targets).id] };
   }
-  const shuffled = [...others].sort(() => Math.random() - 0.5);
-  const count = others.length >= 2 ? (Math.random() < 0.5 ? 1 : 2) : 1;
+  const shuffled = [...targets].sort(() => Math.random() - 0.5);
+  const count = targets.length >= 2 ? (Math.random() < 0.5 ? 1 : 2) : 1;
   return { moveId: move.id, targets: shuffled.slice(0, count).map(p => p.id) };
 }
