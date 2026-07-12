@@ -71,7 +71,7 @@ export class GameEngine {
   }
 
   /** Start the thinking phase (players choose moves) */
-  async startThinkingPhase(room: GameRoom): Promise<void> {
+  startThinkingPhase(room: GameRoom): void {
     room.phase = 'playing';
     room.pendingMoves.clear();
     room.thinkingDeadline = Date.now() + THINKING_TIME;
@@ -88,8 +88,8 @@ export class GameEngine {
 
     this.io.to(room.roomCode).emit('phase_change', { phase: 'thinking', state });
 
-    // Run bot moves serially (easy/normal first, hard ones wait for checkAllSubmitted)
-    await this.runBotMoves(room);
+    // Run bot moves (easy/normal first, hard ones wait for checkAllSubmitted)
+    this.runBotMoves(room);
 
     // If everyone already submitted (e.g. all-bot game), go straight to reveal
     // Only set the thinking timer if the round didn't already advance
@@ -101,8 +101,8 @@ export class GameEngine {
     }
   }
 
-  /** Run easy/normal bot moves serially, yielding between each to avoid blocking */
-  private async runBotMoves(room: GameRoom): Promise<void> {
+  /** Run easy/normal bot moves at the beginning of thinking phase (hard bots wait) */
+  private runBotMoves(room: GameRoom): void {
     const alive = room.getAlivePlayers();
     for (const bot of alive) {
       if (!bot.isBot) continue;
@@ -120,9 +120,6 @@ export class GameEngine {
       } else {
         room.pendingMoves.set(bot.id, { moveId: 'yun', targets: [] });
       }
-
-      // Yield to event loop between bots (avoids CPU spike)
-      await new Promise(r => setTimeout(r, 0));
     }
   }
 
