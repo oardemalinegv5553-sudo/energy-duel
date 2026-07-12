@@ -75,8 +75,14 @@ export class GameRoom {
     this.players.delete(playerId);
     this.pendingMoves.delete(playerId);
     if (playerId === this.hostId) {
-      const first = this.players.keys().next().value;
-      this.hostId = first || '';
+      // Prefer human players for host transfer
+      const human = this.getAllPlayers().find(p => !p.isBot);
+      if (human) {
+        this.hostId = human.id;
+      } else {
+        const first = this.players.keys().next().value;
+        this.hostId = first || '';
+      }
     }
     return this.players.size === 0;
   }
