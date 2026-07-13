@@ -8,9 +8,7 @@ interface Props {
 
 type Tab = 'login' | 'register';
 
-const BASE_URL = import.meta.env.PROD
-  ? 'https://uprising-persuaded-fit.ngrok-free.dev'
-  : window.location.origin;
+const BASE_URL = window.location.origin;
 
 export default function AuthPanel({ onAuthSuccess, onGuest }: Props) {
   const [tab, setTab] = useState<Tab>('login');
