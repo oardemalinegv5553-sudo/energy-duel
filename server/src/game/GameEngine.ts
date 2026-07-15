@@ -374,6 +374,7 @@ export class GameEngine {
 
     // Fair mode: compute level-ups from all recorded kills, rank by m
     if (room.roomType === 'fair') {
+      console.log(`[fair] endGame: fairKills has ${room.fairKills.length} entries`);
       // Compute m and kills per player from all recorded kills
       const killMap: Record<string, { gains: number; count: number }> = {};
       for (const k of room.fairKills) {
@@ -571,6 +572,10 @@ export class GameEngine {
         killerLevel: killer.level,
         victimLevel: victim.level,
       });
+      console.log(`[fair] Round ${room.round}: ${killer.nickname}(Lv.${killer.level}) killed ${victim.nickname}(Lv.${victim.level}) — total kills recorded: ${room.fairKills.length}`);
+    }
+    if (resolution.deaths.length > 0 && room.fairKills.length === 0) {
+      console.log(`[fair] WARNING: ${resolution.deaths.length} deaths but 0 kills recorded. Attacks: ${resolution.attacks.filter(a => a.landing).length} landing`);
     }
   }
 
