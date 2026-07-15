@@ -9,6 +9,7 @@ interface Props {
   playerId: string;
   socket: Socket<ServerToClientEvents, ClientToServerEvents>;
   onLeave: () => void;
+  fairLevelUps?: { playerId: string; nickname: string; oldLevel: number; newLevel: number; kills: number }[];
 }
 
 function rankEmoji(rank: number): string {
@@ -20,7 +21,7 @@ function rankEmoji(rank: number): string {
   }
 }
 
-export default function GameOver({ rankings, levelUps, players, isHost, playerId, socket, onLeave }: Props) {
+export default function GameOver({ rankings, levelUps, players, isHost, playerId, socket, onLeave, fairLevelUps }: Props) {
   const getName = (id: string) => players.find(p => p.id === id)?.nickname || '?';
 
   const handlePlayAgain = () => {
@@ -49,15 +50,21 @@ export default function GameOver({ rankings, levelUps, players, isHost, playerId
 
       {levelUps.length > 0 && (
         <div className="go-levelups">
-          <h3>⬆ 升级</h3>
-          {levelUps.map((lu) => (
-            <div key={lu.playerId} className="go-lu-row">
-              <span>{lu.nickname}</span>
-              <span className="lu-change">
-                Lv.{lu.oldLevel} → <strong>Lv.{lu.newLevel}</strong>
-              </span>
-            </div>
-          ))}
+          <h3>⬆ 升级{!!fairLevelUps && '（击杀加权）'}</h3>
+          {levelUps.map((lu) => {
+            const fair = fairLevelUps?.find(f => f.playerId === lu.playerId);
+            return (
+              <div key={lu.playerId} className="go-lu-row">
+                <span>{lu.nickname}</span>
+                {fair && (
+                  <span className="fair-lu-kills-inline">击杀 {fair.kills}人</span>
+                )}
+                <span className="lu-change">
+                  Lv.{lu.oldLevel} → <strong>Lv.{lu.newLevel}</strong>
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
 

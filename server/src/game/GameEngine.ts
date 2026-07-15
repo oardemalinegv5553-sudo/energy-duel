@@ -274,8 +274,8 @@ export class GameEngine {
         .filter(b => b.remainingRounds > 0);
     }
 
-    // Fair mode: per-round level-ups (even dead players can level up from their kills)
-    this.applyFairLevelUps(room, resolution);
+    // Fair mode: record kills for end-game level-up calculation
+    this.recordFairKills(room, resolution);
 
     const aliveAfter = room.getAlivePlayers();
     const hadDeaths = resolution.deaths.length > 0;
@@ -369,13 +369,29 @@ export class GameEngine {
 
     const rankings = computeRankings(room.getAllPlayers(), room.eliminationOrder);
 
-    // 过半死亡 → survivors already leveled up, use recorded levelUps
-    const levelUps = room.massDeathTriggered
-      ? room.massDeathLevelUps
-      : computeLevelUps(rankings, room.getAllPlayers(), room.initialPlayerCount);
-    applyLevelUps(levelUps, room.players);
-    room.massDeathTriggered = false;
-    room.massDeathLevelUps = [];
+    let levelUps: import('../../../shared/types').LevelUp[];
+    let fairLevelUps: { playerId: string; nickname: string; oldLevel: number; newLevel: number; kills: number }[] | undefined;
+
+    // Fair mode: compute level-ups from all recorded kills
+    if (room.roomType === 'fair') {
+      fairLevelUps = this.computeFairLevelUps(room);
+      // computeFairLevelUps already applied level changes; convert to plain LevelUp[]
+      levelUps = fairLevelUps.map(lu => ({
+        playerId: lu.playerId, nickname: lu.nickname,
+        oldLevel: lu.oldLevel, newLevel: lu.newLevel,
+      }));
+      applyLevelUps(levelUps, room.players); // no-op (already applied) but keeps consistency
+      room.massDeathTriggered = false;
+      room.massDeathLevelUps = [];
+    } else {
+      // 过半死亡 → survivors already leveled up, use recorded levelUps
+      levelUps = room.massDeathTriggered
+        ? room.massDeathLevelUps
+        : computeLevelUps(rankings, room.getAllPlayers(), room.initialPlayerCount);
+      applyLevelUps(levelUps, room.players);
+      room.massDeathTriggered = false;
+      room.massDeathLevelUps = [];
+    }
 
     const state: GameState = {
       phase: 'finished',
@@ -390,6 +406,7 @@ export class GameEngine {
       rankings,
       levelUps,
       players: room.getPlayerInfos(),
+      fairLevelUps,
     });
   }
 
@@ -494,43 +511,52 @@ export class GameEngine {
     }
   }
 
-  /** Fair mode: per-round kill-based level-ups (§fair-battle) */
-  applyFairLevelUps(room: GameRoom, resolution: RoundResolution): void {
+  /** Fair mode: record kills per round for end-game calculation */
+  recordFairKills(room: GameRoom, resolution: RoundResolution): void {
     if (room.roomType !== 'fair') return;
-
-    // Track kills per player: { playerId: { count, gains } }
-    const killMap: Record<string, { count: number; gains: number }> = {};
 
     for (const deathId of resolution.deaths) {
       const victim = room.players.get(deathId);
       if (!victim) continue;
 
-      // Find the last landing attack on this target (the killing blow)
       const killAttack = [...resolution.attacks].reverse()
         .find(a => a.landing && a.target === deathId);
       if (!killAttack) continue;
 
       const killer = room.players.get(killAttack.attacker);
-      if (!killer || killer.id === deathId) continue; // skip self-kill (shouldn't happen)
+      if (!killer || killer.id === deathId) continue;
 
-      const n = killer.level - victim.level;
+      room.fairKills.push({
+        killerId: killer.id,
+        killerLevel: killer.level,
+        victimLevel: victim.level,
+      });
+    }
+  }
+
+  /** Fair mode: compute end-game level-ups from all recorded kills */
+  computeFairLevelUps(room: GameRoom): { playerId: string; nickname: string; oldLevel: number; newLevel: number; kills: number }[] {
+    const killMap: Record<string, { count: number; gains: number }> = {};
+
+    for (const k of room.fairKills) {
+      const n = k.killerLevel - k.victimLevel;
       const gain = n > 0 ? 1 / n : n < 0 ? -n : 1;
 
-      if (!killMap[killer.id]) killMap[killer.id] = { count: 0, gains: 0 };
-      killMap[killer.id].count += 1;
-      killMap[killer.id].gains += gain;
+      if (!killMap[k.killerId]) killMap[k.killerId] = { count: 0, gains: 0 };
+      killMap[k.killerId].count += 1;
+      killMap[k.killerId].gains += gain;
     }
 
     const entries = Object.entries(killMap);
-    if (entries.length === 0) return;
+    if (entries.length === 0) return [];
 
     const totalM = entries.reduce((sum, [, v]) => sum + v.gains, 0);
-    if (totalM === 0) return;
+    if (totalM === 0) return [];
 
     const totalPlayers = room.getAllPlayers().length;
     const target = totalPlayers / 2;
 
-    const fairLevelUps: NonNullable<RoundResolution['fairLevelUps']> = [];
+    const result: { playerId: string; nickname: string; oldLevel: number; newLevel: number; kills: number }[] = [];
 
     for (const [pid, { gains, count }] of entries) {
       const normalized = (gains * target) / totalM;
@@ -542,7 +568,7 @@ export class GameEngine {
 
       const oldLevel = player.level;
       player.level += rounded;
-      fairLevelUps.push({
+      result.push({
         playerId: pid,
         nickname: player.nickname,
         oldLevel,
@@ -551,8 +577,6 @@ export class GameEngine {
       });
     }
 
-    if (fairLevelUps.length > 0) {
-      resolution.fairLevelUps = fairLevelUps;
-    }
+    return result;
   }
 }

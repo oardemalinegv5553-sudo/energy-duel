@@ -158,7 +158,7 @@ export interface ServerToClientEvents {
   player_list: (data: { players: PlayerInfo[]; hostId: string }) => void;
   game_started: (data: { state: GameState }) => void;
   phase_change: (data: { phase: GamePhase; state: GameState; resolution?: RoundResolution }) => void;
-  game_over: (data: { rankings: Ranking[]; levelUps: LevelUp[]; players: PlayerInfo[] }) => void;
+  game_over: (data: { rankings: Ranking[]; levelUps: LevelUp[]; players: PlayerInfo[]; fairLevelUps?: { playerId: string; nickname: string; oldLevel: number; newLevel: number; kills: number }[] }) => void;
   error: (data: { message: string }) => void;
   room_closed: () => void;
   auth_info: (data: { accountId: string | null }) => void;

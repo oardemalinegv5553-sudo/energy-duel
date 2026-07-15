@@ -26,6 +26,7 @@ export class GameRoom {
   disconnectedPlayers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   previousLevels: Map<string, number> = new Map();  // accountId → level for rejoiners
   gamePhase: GamePhase = 'waiting';  // detailed phase for join eligibility
+  fairKills: { killerId: string; killerLevel: number; victimLevel: number }[] = [];  // fair mode kill tracking
   chatMessages: ChatMessage[] = [];  // chat history (max 200)
 
   constructor(roomCode: string, roomType: RoomType = 'duo') {
@@ -128,6 +129,7 @@ export class GameRoom {
   resetForNewGame(): void {
     this.phase = 'waiting';
     this.gamePhase = 'waiting';
+    this.fairKills = [];
     this.round = 0;
     this.eliminationOrder = [];
     this.pendingMoves.clear();

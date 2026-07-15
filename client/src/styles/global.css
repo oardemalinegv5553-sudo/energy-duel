@@ -1230,6 +1230,14 @@ html, body {
 }
 .fair-lu-change { margin-left: auto; }
 .fair-lu-change strong { color: var(--gold); }
+.fair-lu-kills-inline {
+  font-size: 11px;
+  background: rgba(240,192,96,0.15);
+  color: var(--gold);
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
 .fair-lu-delta {
   font-size: 11px;
   color: var(--gold);
