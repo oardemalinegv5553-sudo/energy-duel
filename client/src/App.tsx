@@ -31,6 +31,7 @@ export default function App() {
     levelUps: LevelUp[];
     players: PlayerInfo[];
     fairLevelUps?: { playerId: string; nickname: string; oldLevel: number; newLevel: number; kills: number }[];
+    fairStats?: Record<string, { m: number; kills: number }>;
   } | null>(null);
   const [error, setError] = useState('');
   const [connected, setConnected] = useState(false);
@@ -283,6 +284,7 @@ export default function App() {
           socket={socket}
           onLeave={handleLeave}
           fairLevelUps={gameOverData.fairLevelUps}
+          fairStats={gameOverData.fairStats}
         />
       )}
     </div>

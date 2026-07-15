@@ -10,6 +10,7 @@ interface Props {
   socket: Socket<ServerToClientEvents, ClientToServerEvents>;
   onLeave: () => void;
   fairLevelUps?: { playerId: string; nickname: string; oldLevel: number; newLevel: number; kills: number }[];
+  fairStats?: Record<string, { m: number; kills: number }>;
 }
 
 function rankEmoji(rank: number): string {
@@ -21,7 +22,7 @@ function rankEmoji(rank: number): string {
   }
 }
 
-export default function GameOver({ rankings, levelUps, players, isHost, playerId, socket, onLeave, fairLevelUps }: Props) {
+export default function GameOver({ rankings, levelUps, players, isHost, playerId, socket, onLeave, fairLevelUps, fairStats }: Props) {
   const getName = (id: string) => players.find(p => p.id === id)?.nickname || '?';
 
   const handlePlayAgain = () => {
@@ -34,18 +35,30 @@ export default function GameOver({ rankings, levelUps, players, isHost, playerId
 
       <div className="go-rankings">
         <h3>排名</h3>
-        {rankings.map((r) => (
-          <div
-            key={r.playerId}
-            className={`go-rank-row ${r.playerId === playerId ? 'is-me' : ''} ${r.rank === 1 ? 'rank-gold' : r.rank === 2 ? 'rank-silver' : r.rank === 3 ? 'rank-bronze' : ''}`}
-          >
-            <span className="go-rank-icon">{rankEmoji(r.rank)}</span>
-            <span className="go-rank-name">
-              {r.nickname}
-              {r.playerId === playerId && ' (你)'}
-            </span>
-          </div>
-        ))}
+        {rankings.map((r) => {
+          const stat = fairStats?.[r.playerId];
+          return (
+            <div
+              key={r.playerId}
+              className={`go-rank-row ${r.playerId === playerId ? 'is-me' : ''} ${r.rank === 1 ? 'rank-gold' : r.rank === 2 ? 'rank-silver' : r.rank === 3 ? 'rank-bronze' : ''}`}
+            >
+              <span className="go-rank-icon">{rankEmoji(r.rank)}</span>
+              <span className="go-rank-name">
+                {r.nickname}
+                {r.playerId === playerId && ' (你)'}
+              </span>
+              {stat && (
+                <span className="go-rank-kills">
+                  {stat.kills > 0 ? (
+                    <>⚔ {stat.kills}杀 <span className="go-rank-m">m={stat.m.toFixed(1)}</span></>
+                  ) : (
+                    <span className="go-rank-zero">无击杀</span>
+                  )}
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {levelUps.length > 0 && (

@@ -988,6 +988,21 @@ html, body {
 
 .go-rank-icon { font-size: 26px; }
 .go-rank-name { flex: 1; }
+.go-rank-kills {
+  font-size: 12px;
+  color: var(--gold);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.go-rank-m {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-weight: 400;
+}
+.go-rank-zero {
+  font-size: 11px;
+  color: var(--text-dim);
+}
 
 .go-levelups {
   background: var(--bg-card);

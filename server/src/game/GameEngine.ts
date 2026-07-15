@@ -367,23 +367,62 @@ export class GameEngine {
     room.gamePhase = 'finished';
     room.clearTimer();
 
-    const rankings = computeRankings(room.getAllPlayers(), room.eliminationOrder);
-
+    let rankings;
     let levelUps: import('../../../shared/types').LevelUp[];
     let fairLevelUps: { playerId: string; nickname: string; oldLevel: number; newLevel: number; kills: number }[] | undefined;
+    let fairStats: Record<string, { m: number; kills: number }> | undefined;
 
-    // Fair mode: compute level-ups from all recorded kills
+    // Fair mode: compute level-ups from all recorded kills, rank by m
     if (room.roomType === 'fair') {
+      // Compute m and kills per player from all recorded kills
+      const killMap: Record<string, { gains: number; count: number }> = {};
+      for (const k of room.fairKills) {
+        const n = k.killerLevel - k.victimLevel;
+        const gain = n > 0 ? 1 / n : n < 0 ? -n : 1;
+        if (!killMap[k.killerId]) killMap[k.killerId] = { gains: 0, count: 0 };
+        killMap[k.killerId].gains += gain;
+        killMap[k.killerId].count += 1;
+      }
+
+      // Include all players (even those with 0 kills) in fairStats
+      fairStats = {};
+      for (const p of room.getAllPlayers()) {
+        const k = killMap[p.id];
+        fairStats[p.id] = { m: k ? k.gains : 0, kills: k ? k.count : 0 };
+      }
+
+      // Rank by m descending (ties: kills descending → elimination order)
+      const all = room.getAllPlayers();
+      const eliminated = room.eliminationOrder;
+      all.sort((a, b) => {
+        const mA = fairStats![a.id]?.m ?? 0;
+        const mB = fairStats![b.id]?.m ?? 0;
+        if (mB !== mA) return mB - mA;
+        const kA = fairStats![a.id]?.kills ?? 0;
+        const kB = fairStats![b.id]?.kills ?? 0;
+        if (kB !== kA) return kB - kA;
+        // Later eliminated = better rank
+        const eA = eliminated.indexOf(a.id);
+        const eB = eliminated.indexOf(b.id);
+        if (eA !== -1 && eB !== -1) return eB - eA;
+        return eA === -1 ? -1 : eB === -1 ? 1 : 0;
+      });
+      rankings = all.map((p, i) => ({
+        rank: i + 1,
+        playerId: p.id,
+        nickname: p.nickname,
+      }));
+
       fairLevelUps = this.computeFairLevelUps(room);
-      // computeFairLevelUps already applied level changes; convert to plain LevelUp[]
       levelUps = fairLevelUps.map(lu => ({
         playerId: lu.playerId, nickname: lu.nickname,
         oldLevel: lu.oldLevel, newLevel: lu.newLevel,
       }));
-      applyLevelUps(levelUps, room.players); // no-op (already applied) but keeps consistency
+      applyLevelUps(levelUps, room.players);
       room.massDeathTriggered = false;
       room.massDeathLevelUps = [];
     } else {
+      rankings = computeRankings(room.getAllPlayers(), room.eliminationOrder);
       // 过半死亡 → survivors already leveled up, use recorded levelUps
       levelUps = room.massDeathTriggered
         ? room.massDeathLevelUps
@@ -407,6 +446,7 @@ export class GameEngine {
       levelUps,
       players: room.getPlayerInfos(),
       fairLevelUps,
+      fairStats,
     });
   }
 
