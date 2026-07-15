@@ -178,6 +178,13 @@ export default function Lobby({ socket, onError, onRoomCreated, isLoggedIn, user
           >
             🛡 组队对战
           </button>
+          <button
+            className={`toggle-btn ${roomType === 'fair' ? 'active' : ''}`}
+            onClick={() => handleRoomType('fair')}
+            disabled={loading}
+          >
+            ⚖ 公平混战
+          </button>
         </div>
 
         {roomType === 'team' && (

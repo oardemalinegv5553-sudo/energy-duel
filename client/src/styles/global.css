@@ -1202,6 +1202,40 @@ html, body {
   0%, 100% { transform: scale(1); }
   50%      { transform: scale(1.03); }
 }
+
+/* Fair mode level-up display */
+.result-section.fair-levelups {
+  background: rgba(240,192,96,0.06);
+  border: 1px solid rgba(240,192,96,0.25);
+}
+.result-section.fair-levelups h4 {
+  color: var(--gold);
+}
+.fair-lu-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 14px;
+  animation: fadeIn 0.3s ease both;
+}
+.fair-lu-name { font-weight: 700; }
+.fair-lu-kills {
+  font-size: 11px;
+  background: rgba(240,192,96,0.15);
+  color: var(--gold);
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+.fair-lu-change { margin-left: auto; }
+.fair-lu-change strong { color: var(--gold); }
+.fair-lu-delta {
+  font-size: 11px;
+  color: var(--gold);
+  margin-left: 4px;
+  font-weight: 600;
+}
 @keyframes pulse-urgent {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.6; }

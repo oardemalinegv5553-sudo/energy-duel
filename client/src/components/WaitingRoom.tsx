@@ -39,7 +39,7 @@ export default function WaitingRoom({ roomCode, players, isHost, playerId, roomT
         <h2>房间号</h2>
         <div className="room-code-big">{roomCode}</div>
         <p className="room-hint">
-          {roomType === 'duo' ? '双人对战' : '多人混战'} · 发给朋友加入
+          {roomType === 'duo' ? '双人对战' : roomType === 'team' ? '组队对战' : roomType === 'fair' ? '公平混战' : '多人混战'} · 发给朋友加入
         </p>
       </div>
 

@@ -6,7 +6,7 @@
 export type GamePhase = 'waiting' | 'thinking' | 'reveal' | 'result' | 'finished';
 export type MoveType = 'charge' | 'defense' | 'attack' | 'special' | 'special_defense';
 export type TargetType = 'none' | 'single' | 'dual' | 'all';
-export type RoomType = 'duo' | 'multi' | 'team';
+export type RoomType = 'duo' | 'multi' | 'team' | 'fair';
 
 // ---- Move Definition ----
 export interface MoveDef {
@@ -108,6 +108,7 @@ export interface RoundResolution {
   deaths: string[];
   deathDetails: Record<string, string>; // playerId -> cause of death
   teamKillMessages?: string[];  // 队杀彩蛋
+  fairLevelUps?: { playerId: string; nickname: string; oldLevel: number; newLevel: number; kills: number }[];  // 公平混战回合升级
 }
 
 // ---- Ranking ----

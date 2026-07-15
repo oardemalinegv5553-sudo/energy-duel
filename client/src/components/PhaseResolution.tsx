@@ -97,6 +97,23 @@ export default function PhaseResolution({ resolution, players }: Props) {
         </div>
       )}
 
+      {/* === 公平混战：回合升级 === */}
+      {resolution.fairLevelUps && resolution.fairLevelUps.length > 0 && (
+        <div className="result-section fair-levelups">
+          <h4>⬆ 本回合升级（击杀加权）</h4>
+          {resolution.fairLevelUps.map((lu) => (
+            <div key={lu.playerId} className="fair-lu-row">
+              <span className="fair-lu-name">{lu.nickname}</span>
+              <span className="fair-lu-kills">击杀 {lu.kills}人</span>
+              <span className="fair-lu-change">
+                Lv.{lu.oldLevel} → <strong>Lv.{lu.newLevel}</strong>
+                <span className="fair-lu-delta">(+{lu.newLevel - lu.oldLevel})</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* === 气数变化 === */}
       <div className="result-section">
         <h4>气数</h4>
