@@ -461,6 +461,7 @@ export class GameEngine {
 
     // Step 2: 跺 counter-kill (before attack resolution)
     const duoKills = new Set<string>();
+    const duoKillers: Record<string, string> = {};  // victimId → killerId
     for (const p of players) {
       if (!p.alive) continue;
       const sub = moves.get(p.id);
@@ -476,6 +477,7 @@ export class GameEngine {
         const otherMove = getMoveById(otherSub.moveId);
         if (otherMove?.specialEffect === 'ou_steal' && otherSub.targets.includes(p.id)) {
           duoKills.add(other.id);
+          duoKillers[other.id] = p.id;  // 跺 user killed the 欧 user
         }
       }
     }
@@ -527,6 +529,7 @@ export class GameEngine {
       deaths,
       deathDetails,
       teamKillMessages: teamKillMessages.length > 0 ? teamKillMessages : undefined,
+      duoKillers: Object.keys(duoKillers).length > 0 ? duoKillers : undefined,
     };
   }
 
@@ -557,14 +560,24 @@ export class GameEngine {
     if (room.roomType !== 'fair') return;
 
     for (const deathId of resolution.deaths) {
+      // Skip deaths where victim is the killer themselves (shouldn't happen)
       const victim = room.players.get(deathId);
       if (!victim) continue;
 
-      const killAttack = [...resolution.attacks].reverse()
-        .find(a => a.landing && a.target === deathId);
-      if (!killAttack) continue;
+      let killerId: string | undefined;
 
-      const killer = room.players.get(killAttack.attacker);
+      // 1. Check 跺 counter-kill
+      if (resolution.duoKillers?.[deathId]) {
+        killerId = resolution.duoKillers[deathId];
+      } else {
+        // 2. Find landing attack (last one on this target)
+        const killAttack = [...resolution.attacks].reverse()
+          .find(a => a.landing && a.target === deathId);
+        if (killAttack) killerId = killAttack.attacker;
+      }
+
+      if (!killerId) continue;
+      const killer = room.players.get(killerId);
       if (!killer || killer.id === deathId) continue;
 
       room.fairKills.push({
@@ -574,8 +587,9 @@ export class GameEngine {
       });
       console.log(`[fair] Round ${room.round}: ${killer.nickname}(Lv.${killer.level}) killed ${victim.nickname}(Lv.${victim.level}) — total kills recorded: ${room.fairKills.length}`);
     }
-    if (resolution.deaths.length > 0 && room.fairKills.length === 0) {
-      console.log(`[fair] WARNING: ${resolution.deaths.length} deaths but 0 kills recorded. Attacks: ${resolution.attacks.filter(a => a.landing).length} landing`);
+    if (resolution.deaths.length > 0) {
+      const recordedThisRound = room.fairKills.length; // approximate
+      console.log(`[fair] Round ${room.round}: ${resolution.deaths.length} deaths, recorded kills so far`);
     }
   }
 

@@ -109,6 +109,7 @@ export interface RoundResolution {
   deathDetails: Record<string, string>; // playerId -> cause of death
   teamKillMessages?: string[];  // 队杀彩蛋
   fairLevelUps?: { playerId: string; nickname: string; oldLevel: number; newLevel: number; kills: number }[];  // 公平混战回合升级
+  duoKillers?: Record<string, string>;  // victimId → killerId for 跺 counter-kills
 }
 
 // ---- Ranking ----
