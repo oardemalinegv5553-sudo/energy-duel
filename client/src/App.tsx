@@ -109,8 +109,6 @@ export default function App() {
     socket.on('player_list', (data) => {
       setPlayers(data.players);
       setHostId(data.hostId);
-      // If returning from game over (play again), go back to waiting
-      setView(prev => prev === 'finished' ? 'waiting' : prev);
     });
 
     socket.on('game_started', (data) => {
@@ -208,6 +206,10 @@ export default function App() {
     setGameOverData(null);
   };
 
+  const handlePlayAgain = () => {
+    setView('waiting');
+  };
+
   const isHost = playerId === hostId;
 
   const toggleUiMode = () => {
@@ -283,6 +285,7 @@ export default function App() {
           playerId={playerId}
           socket={socket}
           onLeave={handleLeave}
+          onPlayAgain={handlePlayAgain}
           fairLevelUps={gameOverData.fairLevelUps}
           fairStats={gameOverData.fairStats}
         />

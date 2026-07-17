@@ -80,17 +80,8 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
         ack({ success: false, error: '房间不存在' });
         return;
       }
-      // Allow join during waiting or thinking phase (between rounds)
-      const canJoin = room.phase === 'waiting' || room.gamePhase === 'thinking';
-      if (!canJoin) {
-        // Allow previous members to rejoin anytime
-        const acctId = (socket as any).accountId;
-        const wasMember = acctId && room.previousLevels.has(acctId);
-        if (!wasMember) {
-          ack({ success: false, error: room.gamePhase === 'result' ? '战斗中，请等待回合结束' : '游戏已结束' });
-          return;
-        }
-      }
+      // Always allow join unless full
+      const isGameInProgress = room.phase !== 'waiting';
       if (room.players.size >= room.maxPlayers) {
         ack({ success: false, error: `房间已满（最多 ${room.maxPlayers} 人）` });
         return;
@@ -114,6 +105,12 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
       }
 
       const player = room.addPlayer(data.nickname, joinTeam);
+
+      // If joining mid-game, enter as spectator (can't play until next game)
+      if (isGameInProgress) {
+        player.spectator = true;
+        player.alive = false;
+      }
 
       // If joining mid-game (during thinking), match the lowest alive player's level
       if (room.gamePhase === 'thinking') {
@@ -149,10 +146,10 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
         hostId: room.hostId,
       });
 
-      // If game is in thinking phase, send current game state so the new player sees the game screen
-      if (room.gamePhase === 'thinking') {
+      // If game is in progress, send current game state so spectator sees the game screen
+      if (isGameInProgress && room.gamePhase !== 'waiting') {
         const state = gameEngine.buildState(room);
-        socket.emit('phase_change', { phase: 'thinking', state });
+        socket.emit('phase_change', { phase: room.gamePhase, state });
       }
 
       broadcastRoomList();

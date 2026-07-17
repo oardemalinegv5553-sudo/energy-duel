@@ -104,7 +104,7 @@ export class GameRoom {
     return this.getAllPlayers().map(p => ({
       id: p.id, nickname: p.nickname, level: p.level,
       alive: p.alive, energy: p.energy, hp: p.hp, buffs: p.buffs,
-      isBot: p.isBot, team: p.team, botLevel: p.botLevel, strategyName: p.strategyName,
+      isBot: p.isBot, spectator: p.spectator, team: p.team, botLevel: p.botLevel, strategyName: p.strategyName,
     }));
   }
 
@@ -139,6 +139,7 @@ export class GameRoom {
       p.alive = true;
       p.energy = 0;
       p.buffs = [];
+      p.spectator = false;  // spectators become normal players
     }
   }
 

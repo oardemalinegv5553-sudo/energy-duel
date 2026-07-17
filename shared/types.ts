@@ -65,6 +65,7 @@ export interface PlayerState {
   alive: boolean;
   buffs: Buff[];
   isBot: boolean;
+  spectator?: boolean;  // 观战者（游戏中途加入）
   team?: number;       // 0=红队 1=蓝队，team 模式
   botLevel?: BotLevel;
   strategyName?: string;
@@ -80,6 +81,7 @@ export interface PlayerInfo {
   hp: number;
   buffs: Buff[];
   isBot: boolean;
+  spectator?: boolean;
   team?: number;
   botLevel?: BotLevel;
   strategyName?: string;

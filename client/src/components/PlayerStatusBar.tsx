@@ -19,15 +19,16 @@ function formatEnergy(n: number): string {
 function PlayerRow({ p, playerId }: { p: PlayerInfo; playerId: string }) {
   return (
     <div
-      className={`player-status ${p.id === playerId ? 'is-me' : ''} ${!p.alive ? 'is-dead' : ''}`}
+      className={`player-status ${p.id === playerId ? 'is-me' : ''} ${!p.alive && !p.spectator ? 'is-dead' : ''} ${p.spectator ? 'is-spectator' : ''}`}
     >
       <div className="ps-name">
         {p.isBot && (p.botLevel === 'hard' ? '💀' : p.botLevel === 'easy' ? '🤖' : '🧠')} {p.nickname}
         {p.id === playerId && ' (你)'}
+        {p.spectator && <span className="spectator-tag">👁 观战</span>}
       </div>
       <div className="ps-info">
         <span className="ps-level">Lv.{p.level}</span>
-        <span className="ps-hp">{p.alive ? '♥' : '✝'}</span>
+        <span className="ps-hp">{p.spectator ? '👁' : p.alive ? '♥' : '✝'}</span>
         <span className="ps-energy">气 {formatEnergy(p.energy)}</span>
       </div>
       {p.buffs.length > 0 && (

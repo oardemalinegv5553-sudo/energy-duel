@@ -23,6 +23,7 @@ export default function GameScreen({
 }: Props) {
   const me = players.find(p => p.id === playerId);
   const isDead = me ? !me.alive : true;
+  const isSpectator = me?.spectator || false;
   const [chatOpen, setChatOpen] = useState(false);
   const [chatUnread, setChatUnread] = useState(0);
 
@@ -50,10 +51,10 @@ export default function GameScreen({
           />
         )}
 
-        {phase === 'thinking' && isDead && (
+        {phase === 'thinking' && (isDead || isSpectator) && (
           <div className="dead-notice">
-            <p>你已出局</p>
-            <p className="dead-sub">等待其他玩家结束战斗…</p>
+            <p>{isSpectator ? '观战中' : '你已出局'}</p>
+            <p className="dead-sub">{isSpectator ? '请等待下一局游戏开始' : '等待其他玩家结束战斗…'}</p>
           </div>
         )}
 

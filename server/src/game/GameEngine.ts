@@ -129,7 +129,7 @@ export class GameEngine {
     if (room.phase !== 'playing') return false;
 
     const player = room.players.get(playerId);
-    if (!player || !player.alive) return false;
+    if (!player || !player.alive || player.spectator) return false;
 
     // Don't allow re-submission in same round
     if (room.pendingMoves.has(playerId)) return false;

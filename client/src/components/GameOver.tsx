@@ -9,6 +9,7 @@ interface Props {
   playerId: string;
   socket: Socket<ServerToClientEvents, ClientToServerEvents>;
   onLeave: () => void;
+  onPlayAgain: () => void;
   fairLevelUps?: { playerId: string; nickname: string; oldLevel: number; newLevel: number; kills: number }[];
   fairStats?: Record<string, { m: number; kills: number }>;
 }
@@ -22,11 +23,12 @@ function rankEmoji(rank: number): string {
   }
 }
 
-export default function GameOver({ rankings, levelUps, players, isHost, playerId, socket, onLeave, fairLevelUps, fairStats }: Props) {
+export default function GameOver({ rankings, levelUps, players, isHost, playerId, socket, onLeave, onPlayAgain, fairLevelUps, fairStats }: Props) {
   const getName = (id: string) => players.find(p => p.id === id)?.nickname || '?';
 
   const handlePlayAgain = () => {
     socket.emit('play_again');
+    onPlayAgain();
   };
 
   return (

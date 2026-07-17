@@ -456,6 +456,15 @@ html, body {
   opacity: 0.45;
   filter: grayscale(0.5);
 }
+.player-status.is-spectator {
+  opacity: 0.55;
+  border-style: dashed;
+}
+.spectator-tag {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-left: 4px;
+}
 .ps-name { font-weight: 700; font-size: 15px; margin-bottom: 6px; }
 .ps-info {
   display: flex;
