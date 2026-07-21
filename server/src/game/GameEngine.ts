@@ -3,7 +3,7 @@ import { GameRoom } from '../room/GameRoom';
 import { resolveEnergy } from './EnergyResolver';
 import { resolveAttacks } from './MoveResolver';
 import { computeRankings, computeLevelUps, applyLevelUps } from './LevelResolver';
-import { getMoveById } from '../data/moves';
+import { getMoveById, MOVES } from '../data/moves';
 import { chooseBotMove, chooseHardBotMove, createBotMemory, recordOpponentMove } from './BotEngine';
 import { RoundResolution, GameState, PlayerInfo } from '../../../shared/types';
 
@@ -146,6 +146,17 @@ export class GameEngine {
     }
     if (player.energy < moveDef.cost) return false;
 
+    // Check shattered skills (§3.6)
+    if (room.shatteredSkills.has(moveId)) return false;
+
+    // Check cumulative trigger (§3.7)
+    if (moveDef.cumulativeTrigger) {
+      const counters = room.cumulativeCounters[playerId] || {};
+      const required = moveDef.cumulativeCount || 3;
+      if ((counters[moveDef.cumulativeTrigger] || 0) < required) return false;
+      // Will deduct after resolution (in startResultPhase)
+    }
+
     // Validate targets
     if (moveDef.targetType === 'single' && targets.length !== 1) return false;
     if (moveDef.targetType === 'dual' && (targets.length < 1 || targets.length > 2)) return false;
@@ -250,6 +261,12 @@ export class GameEngine {
         player.alive = false;
         room.eliminationOrder.push(pid);
       }
+    }
+
+    // Reset shatter state + cumulative counters when someone dies (§3.6, §3.7)
+    if (resolution.deaths.length > 0) {
+      room.shatteredSkills.clear();
+      room.cumulativeCounters = {};
     }
 
     // Record opponent moves for bots (learning)
@@ -459,31 +476,58 @@ export class GameEngine {
     // Step 1: Energy resolution
     const { energyChanges, ouChain } = resolveEnergy(players, moves);
 
-    // Step 2: 跺 counter-kill (before attack resolution)
+    // Step 2: 跺 counter-kill — global: ALL 欧 users killed by 跺 user
     const duoKills = new Set<string>();
     const duoKillers: Record<string, string> = {};  // victimId → killerId
+    const duoUsers: string[] = [];
     for (const p of players) {
       if (!p.alive) continue;
       const sub = moves.get(p.id);
       if (!sub) continue;
       const moveDef = getMoveById(sub.moveId);
-      if (!moveDef || moveDef.specialEffect !== 'duo_counter') continue;
-
-      // Check who is using 欧 on this player
+      if (moveDef?.specialEffect === 'duo_counter') {
+        duoUsers.push(p.id);
+      }
+    }
+    if (duoUsers.length > 0) {
+      const killer = duoUsers[0]; // first 跺 user kills all 欧 users
       for (const other of players) {
-        if (!other.alive || other.id === p.id) continue;
+        if (!other.alive) continue;
         const otherSub = moves.get(other.id);
         if (!otherSub) continue;
         const otherMove = getMoveById(otherSub.moveId);
-        if (otherMove?.specialEffect === 'ou_steal' && otherSub.targets.includes(p.id)) {
+        if (otherMove?.specialEffect === 'ou_steal') {
           duoKills.add(other.id);
-          duoKillers[other.id] = p.id;  // 跺 user killed the 欧 user
+          duoKillers[other.id] = killer;
         }
       }
     }
 
     // Step 3: Attack resolution
-    const { attacks, deaths, deathDetails } = resolveAttacks(players, moves, duoKills);
+    const { attacks, deaths, deathDetails, shatters } = resolveAttacks(players, moves, duoKills);
+    // Apply shattered skills
+    for (const skillId of shatters) {
+      room.shatteredSkills.add(skillId);
+    }
+
+    // Track cumulative counters: increment base skills, reset triggered moves
+    for (const [pid, sub] of moves) {
+      const moveDef = getMoveById(sub.moveId);
+      if (!moveDef) continue;
+      // Increment base skill counters for cumulative triggers
+      for (const otherMove of MOVES) {
+        if (otherMove.cumulativeTrigger === moveDef.id && moveDef.id !== otherMove.id) {
+          // This move IS a base skill for some cumulative trigger
+          if (!room.cumulativeCounters[pid]) room.cumulativeCounters[pid] = {};
+          room.cumulativeCounters[pid][moveDef.id] = (room.cumulativeCounters[pid][moveDef.id] || 0) + 1;
+        }
+      }
+      // Reset counter when cumulative-triggered move is used
+      if (moveDef.cumulativeTrigger) {
+        if (!room.cumulativeCounters[pid]) room.cumulativeCounters[pid] = {};
+        room.cumulativeCounters[pid][moveDef.cumulativeTrigger] = 0;
+      }
+    }
 
     const playerMap = new Map(players.map(p => [p.id, p]));
 
@@ -530,6 +574,7 @@ export class GameEngine {
       deathDetails,
       teamKillMessages: teamKillMessages.length > 0 ? teamKillMessages : undefined,
       duoKillers: Object.keys(duoKillers).length > 0 ? duoKillers : undefined,
+      shatters: shatters.length > 0 ? shatters : undefined,
     };
   }
 

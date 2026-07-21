@@ -27,6 +27,8 @@ export class GameRoom {
   previousLevels: Map<string, number> = new Map();  // accountId → level for rejoiners
   gamePhase: GamePhase = 'waiting';  // detailed phase for join eligibility
   fairKills: { killerId: string; killerLevel: number; victimLevel: number }[] = [];  // fair mode kill tracking
+  shatteredSkills: Set<string> = new Set();  // skills disabled this game (§3.6)
+  cumulativeCounters: Record<string, Record<string, number>> = {};  // playerId → { skillId: count } (§3.7)
   chatMessages: ChatMessage[] = [];  // chat history (max 200)
 
   constructor(roomCode: string, roomType: RoomType = 'duo') {
@@ -141,6 +143,8 @@ export class GameRoom {
       p.buffs = [];
       p.spectator = false;  // spectators become normal players
     }
+    this.shatteredSkills.clear();
+    this.cumulativeCounters = {};
   }
 
   addChatMessage(msg: ChatMessage): void {

@@ -19,8 +19,12 @@ export interface MoveDef {
   def: number;
   targetType: TargetType;
   description: string;
-  specialEffect?: 'ou_steal' | 'duo_counter' | 'guanyin_buff' | 'longdun_block' | 'dudun_block';
+  specialEffect?: 'ou_steal' | 'duo_counter' | 'guanyin_buff' | 'longdun_block' | 'dudun_block' | 'shatter';
   globalUnlock?: boolean;   // if true, unlocks for all players when any one player reaches the level
+  shatterTarget?: string;   // single skill ID to shatter
+  shatterTargets?: string[]; // multiple skill IDs to shatter
+  cumulativeTrigger?: string; // base skill ID to track usage
+  cumulativeCount?: number;   // number of uses required (default 3)
 }
 
 // ---- Buff ----
@@ -112,6 +116,7 @@ export interface RoundResolution {
   teamKillMessages?: string[];  // 队杀彩蛋
   fairLevelUps?: { playerId: string; nickname: string; oldLevel: number; newLevel: number; kills: number }[];  // 公平混战回合升级
   duoKillers?: Record<string, string>;  // victimId → killerId for 跺 counter-kills
+  shatters?: string[];  // skill IDs shattered this round (§3.6)
 }
 
 // ---- Ranking ----

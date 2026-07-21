@@ -14,10 +14,11 @@ export function resolveAttacks(
   players: PlayerState[],
   moves: Map<string, { moveId: string; targets: string[] }>,
   duoKills: Set<string>
-): { attacks: AttackRecord[]; deaths: string[]; deathDetails: Record<string, string> } {
+): { attacks: AttackRecord[]; deaths: string[]; deathDetails: Record<string, string>; shatters: string[] } {
   const attacks: AttackRecord[] = [];
   const deaths: string[] = [];
   const deathDetails: Record<string, string> = {};
+  const shatters: string[] = [];  // skill IDs that were shattered this round
 
   const aliveMap = new Map(players.map(p => [p.id, p.alive]));
   const playerMap = new Map(players.map(p => [p.id, p]));
@@ -104,7 +105,7 @@ export function resolveAttacks(
       }
       // CASE 2: Target defending (or special rule blocks)
       else if (targetIsDefending || targetIsLongdun || targetIsDudun) {
-        if (targetIsLongdun && ['longzhua', 'xianglong'].includes(pa.moveId)) {
+        if (targetIsLongdun && ['longzhua', 'haitian'].includes(pa.moveId)) {
           landing = false;
           description = `${N(targetId)} 的龙盾免疫「${atkMoveName}」`;
         } else if (targetIsDudun && pa.moveId === 'du') {
@@ -144,7 +145,35 @@ export function resolveAttacks(
     }
   }
 
-  return { attacks, deaths: [...new Set(deaths)], deathDetails };
+  // Post-process: shatter moves don't kill, they disable skills
+  const finalDeaths: string[] = [];
+  for (const d of [...new Set(deaths)]) {
+    // Find the attack that killed this target
+    const killAttack = [...attacks].reverse().find(a => a.landing && a.target === d);
+    if (killAttack) {
+      const killerSub = moves.get(killAttack.attacker);
+      const killerMove = killerSub ? getMoveById(killerSub.moveId) : null;
+      if (killerMove?.specialEffect === 'shatter') {
+        // Shatter: disable target skill, don't kill
+        const targetSub = moves.get(d);
+        if (targetSub) {
+          const targetMove = getMoveById(targetSub.moveId);
+          if (targetMove) {
+            const shatteredId = targetMove.id;
+            if (killerMove.shatterTargets?.includes(shatteredId) || killerMove.shatterTarget === shatteredId) {
+              shatters.push(shatteredId);
+              // Update attack description
+              killAttack.description += ` — 击碎「${targetMove.name}」`;
+              continue; // don't add to finalDeaths
+            }
+          }
+        }
+      }
+    }
+    finalDeaths.push(d);
+  }
+
+  return { attacks, deaths: finalDeaths, deathDetails, shatters };
 }
 
 export function resolveRound(): RoundResolution {

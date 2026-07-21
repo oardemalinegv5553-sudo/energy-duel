@@ -282,7 +282,7 @@ function normalBot(
   // === CHECKMATE: 绝杀检测 ===
   // 挂机(50ATK) or 降龙十八掌(55ATK) when opponent can't超防(50DEF, costs 1气)
   const hasGuaji = affordable.some(m => m.id === 'guaji');
-  const hasXianglong = affordable.some(m => m.id === 'xianglong');
+  const hasXianglong = affordable.some(m => m.id === 'haitian');
   const oppCanChaofang = opp.energy >= 1 && oppAllAvailable.some(m => m.id === 'chaofang');
   const oppCanYuanding = opp.energy >= 1 && oppAllAvailable.some(m => m.id === 'yuanding');
   const oppCanBlock50 = oppCanChaofang || oppCanYuanding;
@@ -293,9 +293,9 @@ function normalBot(
   }
   if (hasXianglong && bot.energy >= 3) {
     // 降龙十八掌 55攻，连超防也破 → 只要对面不是观音坐莲就杀
-    const oppHasGuanyin = oppAllAvailable.some(m => m.specialEffect === 'guanyin_buff') && opp.energy >= 2;
+    const oppHasGuanyin = oppAllAvailable.some(m => m.specialEffect === 'guanyin_buff');
     if (!oppHasGuanyin) {
-      return makeTargets(getMoveById('xianglong')!, bot, others);
+      return makeTargets(getMoveById('haitian')!, bot, others);
     }
   }
 
@@ -465,13 +465,13 @@ function evalExchange(myMove: MoveDef, oppMove: MoveDef, me: PlayerState, opp: P
         else oppDeath = true;
       }
     } else if (iAttack && (oppMove.def > 0 || oppMove.type === 'special_defense')) {
-      if (oppMove.specialEffect === 'longdun_block' && ['longzhua', 'xianglong'].includes(myMove.id)) {}
+      if (oppMove.specialEffect === 'longdun_block' && ['longzhua', 'haitian'].includes(myMove.id)) {}
       else if (oppMove.specialEffect === 'dudun_block' && myMove.id === 'du') {}
       else if (myMove.atk > oppMove.def) oppDeath = true;
     } else if (iAttack) {
       oppDeath = true;
     } else if (oppAttack && (myMove.def > 0 || myMove.type === 'special_defense')) {
-      if (myMove.specialEffect === 'longdun_block' && ['longzhua', 'xianglong'].includes(oppMove.id)) {}
+      if (myMove.specialEffect === 'longdun_block' && ['longzhua', 'haitian'].includes(oppMove.id)) {}
       else if (myMove.specialEffect === 'dudun_block' && oppMove.id === 'du') {}
       else if (oppMove.atk > myMove.def) myDeath = true;
     } else if (oppAttack) {
@@ -677,7 +677,7 @@ export function chooseHardBotMove(
     }
 
     // Can't safely counter-attack → defend
-    const hasXianglong = incomingAttacks.some(a => a.move.id === 'xianglong');
+    const hasXianglong = incomingAttacks.some(a => a.move.id === 'haitian');
     const hasLongzhua = incomingAttacks.some(a => a.move.id === 'longzhua');
     const hasDu = incomingAttacks.some(a => a.move.id === 'du');
 
@@ -778,7 +778,7 @@ export function chooseHardBotMove(
       for (const atk of attacks) {
         // 龙盾: only blocks 龙爪/降龙, everything else passes (DEF=0)
         if (defMove.specialEffect === 'longdun_block') {
-          if (atk.id !== 'longzhua' && atk.id !== 'xianglong') {
+          if (atk.id !== 'longzhua' && atk.id !== 'haitian') {
             breakable.push({ target: def, move: atk });
             break; // any non-龙 attack works
           }
