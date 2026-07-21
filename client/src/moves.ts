@@ -12,6 +12,8 @@ export interface ClientMoveDef {
   targetType: 'none' | 'single' | 'dual' | 'all';
   description: string;
   globalUnlock?: boolean;
+  cumulativeTrigger?: string;
+  cumulativeCount?: number;
 }
 
 export const ALL_MOVES: ClientMoveDef[] = [
@@ -48,7 +50,7 @@ export const ALL_MOVES: ClientMoveDef[] = [
   { id: 'yuanding', name: '园丁', level: 10, cost: 1, type: 'defense', atk: 0, def: 75, targetType: 'none', description: '防 75，挡「牛气冲天」「天马流星拳」' },
   // Level 11
   { id: 'lianhua',   name: '莲花',   level: 11, cost: 0, type: 'defense', atk: 0, def: 50, targetType: 'none', description: '防 50，0气超防' },
-  { id: 'lianhua_throne', name: '莲花宝座', level: 11, cost: 0, type: 'defense', atk: 0, def: 300, targetType: 'none', description: '3次莲花后发动，霸体两回合' },
+  { id: 'lianhua_throne', name: '莲花宝座', level: 11, cost: 0, type: 'defense', atk: 0, def: 300, targetType: 'none', description: '3次莲花后发动，霸体两回合', cumulativeTrigger: 'lianhua', cumulativeCount: 3 },
   // Level 12
   { id: 'du',    name: '毒',   level: 12, cost: 1, type: 'attack',  atk: 30, def: 0, targetType: 'single', description: '攻 30，击碎「莲花」' },
   { id: 'dudun', name: '毒盾', level: 12, cost: 0, type: 'defense', atk: 0,  def: 10, targetType: 'none',   description: '防 10，挡「毒」', globalUnlock: true },
@@ -61,10 +63,10 @@ export const ALL_MOVES: ClientMoveDef[] = [
   { id: 'qicailamian',  name: '七彩拉面', level: 14, cost: 2, type: 'attack', atk: 75, def: 0, targetType: 'single', description: '攻 75，击碎「园丁」' },
   // Level 15
   { id: 'jinniu',       name: '金牛',       level: 15, cost: 0, type: 'defense', atk: 0, def: 75, targetType: 'none',   description: '防 75' },
-  { id: 'jinniu_top',   name: '金牛漩涡顶', level: 15, cost: 0, type: 'attack',  atk: 75, def: 0, targetType: 'single', description: '3次金牛发动，击碎金牛园丁' },
+  { id: 'jinniu_top',   name: '金牛漩涡顶', level: 15, cost: 0, type: 'attack',  atk: 75, def: 0, targetType: 'single', description: '3次金牛发动，击碎金牛园丁', cumulativeTrigger: 'jinniu', cumulativeCount: 3 },
   // Level 16
   { id: 'haiwang',       name: '海王',     level: 16, cost: 0, type: 'defense', atk: 0, def: 75, targetType: 'none', description: '防 75' },
-  { id: 'haiwang_quake', name: '海王震天', level: 16, cost: 0, type: 'attack',  atk: 75, def: 0, targetType: 'all',  description: '3次海王发动，全体击碎园丁金牛' },
+  { id: 'haiwang_quake', name: '海王震天', level: 16, cost: 0, type: 'attack',  atk: 75, def: 0, targetType: 'all',  description: '3次海王发动，全体击碎园丁金牛', cumulativeTrigger: 'haiwang', cumulativeCount: 3 },
   // Level 17
   { id: 'gangcha',    name: '钢叉',     level: 17, cost: 1, type: 'attack', atk: 60, def: 0, targetType: 'single', description: '攻 60' },
   { id: 'shuangguan', name: '双管齐下', level: 17, cost: 3, type: 'attack', atk: 80, def: 0, targetType: 'single', description: '攻 80' },

@@ -43,6 +43,18 @@ export default function MoveSelector({ players, playerId, level, energy, socket,
 
   const canAfford = (move: ClientMoveDef) => energy >= move.cost;
 
+  const myProgress = players.find(p => p.id === playerId)?.cumulativeProgress || {};
+
+  const canUseCumulative = (move: ClientMoveDef): boolean => {
+    if (!move.cumulativeTrigger) return true;
+    const required = move.cumulativeCount || 3;
+    return (myProgress[move.cumulativeTrigger] || 0) >= required;
+  };
+
+  const isMoveDisabled = (move: ClientMoveDef): boolean => {
+    return !canAfford(move) || !canUseCumulative(move);
+  };
+
   const myTeam = players.find(p => p.id === playerId)?.team;
   const isTeamMode = myTeam !== undefined;
   const opponents = alivePlayers.filter(p => p.team !== myTeam);
@@ -51,6 +63,7 @@ export default function MoveSelector({ players, playerId, level, energy, socket,
   const handleSelectMove = (move: ClientMoveDef) => {
     if (submitted) return;
     if (!canAfford(move)) return;
+    if (!canUseCumulative(move)) return;
 
     if (move.targetType === 'all') {
       setSelectedMove(move);
@@ -141,10 +154,10 @@ export default function MoveSelector({ players, playerId, level, energy, socket,
             {chargeMoves.map((m, i) => (
               <button
                 key={m.id}
-                className={`move-card anim-fade-in ${uiMode === 'compact' ? 'compact' : ''} ${selectedMove?.id === m.id ? 'selected' : ''} ${!canAfford(m) ? 'disabled' : ''} ${expandedId === m.id ? 'expanded' : ''}`}
+                className={`move-card anim-fade-in ${uiMode === 'compact' ? 'compact' : ''} ${selectedMove?.id === m.id ? 'selected' : ''} ${isMoveDisabled(m) ? 'disabled' : ''} ${expandedId === m.id ? 'expanded' : ''}`}
                 onClick={() => handleSelectMove(m)}
                 onDoubleClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
-                disabled={!canAfford(m)}
+                disabled={isMoveDisabled(m)}
                 style={{ animationDelay: `${i * 40}ms` }}
               >
                 <span className="move-name">{m.name}</span>
@@ -164,10 +177,10 @@ export default function MoveSelector({ players, playerId, level, energy, socket,
             {attackMoves.map((m, i) => (
               <button
                 key={m.id}
-                className={`move-card atk anim-fade-in ${uiMode === 'compact' ? 'compact' : ''} ${selectedMove?.id === m.id ? 'selected' : ''} ${!canAfford(m) ? 'disabled' : ''} ${expandedId === m.id ? 'expanded' : ''}`}
+                className={`move-card atk anim-fade-in ${uiMode === 'compact' ? 'compact' : ''} ${selectedMove?.id === m.id ? 'selected' : ''} ${isMoveDisabled(m) ? 'disabled' : ''} ${expandedId === m.id ? 'expanded' : ''}`}
                 onClick={() => handleSelectMove(m)}
                 onDoubleClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
-                disabled={!canAfford(m)}
+                disabled={isMoveDisabled(m)}
                 style={{ animationDelay: `${(chargeMoves.length + i) * 40}ms` }}
               >
                 <span className="move-name">{m.name}</span>
@@ -188,10 +201,10 @@ export default function MoveSelector({ players, playerId, level, energy, socket,
             {defenseMoves.map((m, i) => (
               <button
                 key={m.id}
-                className={`move-card def anim-fade-in ${uiMode === 'compact' ? 'compact' : ''} ${selectedMove?.id === m.id ? 'selected' : ''} ${!canAfford(m) ? 'disabled' : ''} ${expandedId === m.id ? 'expanded' : ''}`}
+                className={`move-card def anim-fade-in ${uiMode === 'compact' ? 'compact' : ''} ${selectedMove?.id === m.id ? 'selected' : ''} ${isMoveDisabled(m) ? 'disabled' : ''} ${expandedId === m.id ? 'expanded' : ''}`}
                 onClick={() => handleSelectMove(m)}
                 onDoubleClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
-                disabled={!canAfford(m)}
+                disabled={isMoveDisabled(m)}
                 style={{ animationDelay: `${(chargeMoves.length + attackMoves.length + i) * 40}ms` }}
               >
                 <span className="move-name">{m.name}</span>
@@ -213,10 +226,10 @@ export default function MoveSelector({ players, playerId, level, energy, socket,
               {specialMoves.map((m, i) => (
                 <button
                   key={m.id}
-                  className={`move-card sp anim-fade-in ${uiMode === 'compact' ? 'compact' : ''} ${selectedMove?.id === m.id ? 'selected' : ''} ${!canAfford(m) ? 'disabled' : ''} ${expandedId === m.id ? 'expanded' : ''}`}
+                  className={`move-card sp anim-fade-in ${uiMode === 'compact' ? 'compact' : ''} ${selectedMove?.id === m.id ? 'selected' : ''} ${isMoveDisabled(m) ? 'disabled' : ''} ${expandedId === m.id ? 'expanded' : ''}`}
                   onClick={() => handleSelectMove(m)}
                   onDoubleClick={() => setExpandedId(expandedId === m.id ? null : m.id)}
-                  disabled={!canAfford(m)}
+                  disabled={isMoveDisabled(m)}
                   style={{ animationDelay: `${(chargeMoves.length + attackMoves.length + defenseMoves.length + i) * 40}ms` }}
                 >
                   <span className="move-name">{m.name}</span>

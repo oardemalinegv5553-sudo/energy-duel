@@ -107,6 +107,7 @@ export class GameRoom {
       id: p.id, nickname: p.nickname, level: p.level,
       alive: p.alive, energy: p.energy, hp: p.hp, buffs: p.buffs,
       isBot: p.isBot, spectator: p.spectator, team: p.team, botLevel: p.botLevel, strategyName: p.strategyName,
+      cumulativeProgress: p.cumulativeProgress || {},
     }));
   }
 

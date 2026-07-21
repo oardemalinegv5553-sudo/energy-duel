@@ -514,18 +514,27 @@ export class GameEngine {
     for (const [pid, sub] of moves) {
       const moveDef = getMoveById(sub.moveId);
       if (!moveDef) continue;
+      const player = room.players.get(pid);
       // Increment base skill counters for cumulative triggers
       for (const otherMove of MOVES) {
         if (otherMove.cumulativeTrigger === moveDef.id && moveDef.id !== otherMove.id) {
           // This move IS a base skill for some cumulative trigger
           if (!room.cumulativeCounters[pid]) room.cumulativeCounters[pid] = {};
           room.cumulativeCounters[pid][moveDef.id] = (room.cumulativeCounters[pid][moveDef.id] || 0) + 1;
+          if (player) {
+            if (!player.cumulativeProgress) player.cumulativeProgress = {};
+            player.cumulativeProgress[moveDef.id] = room.cumulativeCounters[pid][moveDef.id];
+          }
         }
       }
       // Reset counter when cumulative-triggered move is used
       if (moveDef.cumulativeTrigger) {
         if (!room.cumulativeCounters[pid]) room.cumulativeCounters[pid] = {};
         room.cumulativeCounters[pid][moveDef.cumulativeTrigger] = 0;
+        if (player) {
+          if (!player.cumulativeProgress) player.cumulativeProgress = {};
+          player.cumulativeProgress[moveDef.cumulativeTrigger] = 0;
+        }
       }
     }
 

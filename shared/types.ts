@@ -73,6 +73,7 @@ export interface PlayerState {
   team?: number;       // 0=红队 1=蓝队，team 模式
   botLevel?: BotLevel;
   strategyName?: string;
+  cumulativeProgress?: Record<string, number>;  // skillId → usage count (§3.7)
 }
 
 // ---- Player Info (sent to clients) ----
@@ -89,6 +90,7 @@ export interface PlayerInfo {
   team?: number;
   botLevel?: BotLevel;
   strategyName?: string;
+  cumulativeProgress?: Record<string, number>;  // skillId → usage count (§3.7)
 }
 
 // ---- Move Submission ----
