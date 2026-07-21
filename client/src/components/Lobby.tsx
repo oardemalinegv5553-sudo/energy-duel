@@ -60,7 +60,7 @@ export default function Lobby({ socket, onError, onRoomCreated, isLoggedIn, user
   };
 
   const handleLevelChange = (val: number) => {
-    const clamped = Math.max(1, Math.min(13, val));
+    const clamped = Math.max(1, Math.min(17, val));
     setInitialLevel(clamped);
     if (roomType === 'duo') {
       setDuoLevel(clamped);
@@ -215,14 +215,14 @@ export default function Lobby({ socket, onError, onRoomCreated, isLoggedIn, user
         <input
           className="lobby-input"
           type="range"
-          min="1" max="13"
+          min="1" max="17"
           value={initialLevel}
           onChange={(e) => handleLevelChange(Number(e.target.value))}
           disabled={loading}
         />
         <div className="level-labels">
           <span>Lv.1 基础</span>
-          <span>Lv.13 全招</span>
+          <span>Lv.17 全招</span>
         </div>
 
         <button

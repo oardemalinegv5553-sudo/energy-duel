@@ -20,7 +20,7 @@ export class RoomManager {
       code = generateRoomCode();
     } while (this.rooms.has(code));
     const room = new GameRoom(code, roomType);
-    room.initialLevel = Math.max(1, Math.min(13, initialLevel));
+    room.initialLevel = Math.max(1, Math.min(17, initialLevel));
     this.rooms.set(code, room);
     return room;
   }
