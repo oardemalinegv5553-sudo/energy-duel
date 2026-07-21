@@ -50,6 +50,25 @@ export default function RulesModal({ show, onClose }: Props) {
           <li>任何人达到等级 → <strong>全员解锁</strong></li>
         </ul>
 
+        <h3>击碎（§3.6）</h3>
+        <ul>
+          <li>毒→莲花，七彩拉面→园丁，金牛漩涡顶→金牛/园丁，海王震天→园丁/金牛</li>
+          <li>不致死，但被击碎的技能<strong>本局禁用</strong></li>
+          <li>有人死亡后 / 下一局重置</li>
+        </ul>
+
+        <h3>累计触发（§3.7）</h3>
+        <ul>
+          <li>莲花宝座（3次莲花）、金牛漩涡顶（3次金牛）、海王震天（3次海王）</li>
+          <li>使用基础招式 3 次后才能发动一次，发动后计数归零</li>
+          <li>有人死亡后 / 下一局重置</li>
+        </ul>
+
+        <h3>跺（全场反制）</h3>
+        <ul>
+          <li>只要有人使用「跺」，场上<strong>所有</strong>欧使用者均被跺使用者击杀</li>
+        </ul>
+
         <h3>招式总览</h3>
         <div className="moves-table-wrap">
           <table className="moves-table">
