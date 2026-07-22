@@ -57,15 +57,15 @@ export const MOVES: MoveDef[] = [
 
   // ===== Level 14 =====
   { id: 'lamian',       name: '拉面',     level: 14, cost: 1, type: 'attack', atk: 50, def: 0, targetType: 'single', description: '50 攻，单体攻击' },
-  { id: 'qicailamian',  name: '七彩拉面', level: 14, cost: 2, type: 'attack', atk: 75, def: 0, targetType: 'single', description: '75 攻，击碎「园丁」', specialEffect: 'shatter', shatterTarget: 'yuanding' },
+  { id: 'qicailamian',  name: '七彩拉面', level: 14, cost: 2, type: 'attack', atk: 75, def: 0, targetType: 'single', description: '75 攻，击碎「园丁」「金牛」「海王」', specialEffect: 'shatter', shatterTargets: ['yuanding', 'jinniu', 'haiwang'] },
 
   // ===== Level 15 =====
   { id: 'jinniu',         name: '金牛',         level: 15, cost: 0, type: 'defense', atk: 0,  def: 75, targetType: 'none',   description: '防御 75' },
-  { id: 'jinniu_top',     name: '金牛漩涡顶',   level: 15, cost: 0, type: 'attack',  atk: 75, def: 0,  targetType: 'single', description: '需使用三次金牛；击碎金牛、园丁', specialEffect: 'shatter', shatterTargets: ['jinniu', 'yuanding'], cumulativeTrigger: 'jinniu', cumulativeCount: 3 },
+  { id: 'jinniu_top',     name: '金牛漩涡顶',   level: 15, cost: 0, type: 'attack',  atk: 75, def: 0,  targetType: 'single', description: '需使用三次金牛；击碎园丁、金牛、海王', specialEffect: 'shatter', shatterTargets: ['yuanding', 'jinniu', 'haiwang'], cumulativeTrigger: 'jinniu', cumulativeCount: 3 },
 
   // ===== Level 16 =====
   { id: 'haiwang',       name: '海王',     level: 16, cost: 0, type: 'defense', atk: 0,  def: 75, targetType: 'none', description: '防御 75' },
-  { id: 'haiwang_quake', name: '海王震天', level: 16, cost: 0, type: 'attack',  atk: 75, def: 0,  targetType: 'all',  description: '需使用三次海王；全体攻击，击碎园丁、金牛', specialEffect: 'shatter', shatterTargets: ['yuanding', 'jinniu'], cumulativeTrigger: 'haiwang', cumulativeCount: 3 },
+  { id: 'haiwang_quake', name: '海王震天', level: 16, cost: 0, type: 'attack',  atk: 75, def: 0,  targetType: 'all',  description: '需使用三次海王；全体攻击，击碎园丁、金牛、海王', specialEffect: 'shatter', shatterTargets: ['yuanding', 'jinniu', 'haiwang'], cumulativeTrigger: 'haiwang', cumulativeCount: 3 },
 
   // ===== Level 17 =====
   { id: 'gangcha',    name: '钢叉',     level: 17, cost: 1, type: 'attack', atk: 60, def: 0, targetType: 'single', description: '60 攻，单体攻击' },

@@ -93,11 +93,23 @@ const CANDIDATE_COUNT = 6;
 
 export function chooseBotMove(
   level: BotLevel, bot: PlayerState, allPlayers: PlayerState[],
-  round: number, memory: BotMemory
+  round: number, memory: BotMemory, shatteredSkills?: Set<string>
 ): { moveId: string; targets: string[] } {
-  const allAvailable = getMovesByLevel(bot.level);
+  let allAvailable = getMovesByLevel(bot.level);
   const others = allPlayers.filter(p => p.alive && p.id !== bot.id);
   if (others.length === 0) return { moveId: 'yun', targets: [] };
+
+  // Filter shattered skills
+  if (shatteredSkills) {
+    allAvailable = allAvailable.filter(m => !shatteredSkills.has(m.id));
+  }
+  // Filter cumulative trigger moves where counter isn't met
+  allAvailable = allAvailable.filter(m => {
+    if (!m.cumulativeTrigger) return true;
+    const required = m.cumulativeCount || 3;
+    const progress = bot.cumulativeProgress || {};
+    return (progress[m.cumulativeTrigger] || 0) >= required;
+  });
 
   // Team mode: filter out AOE attacks (would hit teammates)
   const isTeamMode = bot.team !== undefined;
@@ -604,9 +616,21 @@ export function recordOpponentMove(memory: BotMemory, opponentId: string, moveId
 export function chooseHardBotMove(
   bot: PlayerState,
   allPlayers: PlayerState[],
-  pendingMoves: Map<string, { moveId: string; targets: string[] }>
+  pendingMoves: Map<string, { moveId: string; targets: string[] }>,
+  shatteredSkills?: Set<string>
 ): { moveId: string; targets: string[] } {
-  const allAvailable = getMovesByLevel(bot.level);
+  let allAvailable = getMovesByLevel(bot.level);
+  // Filter shattered skills
+  if (shatteredSkills) {
+    allAvailable = allAvailable.filter(m => !shatteredSkills.has(m.id));
+  }
+  // Filter cumulative trigger moves
+  allAvailable = allAvailable.filter(m => {
+    if (!m.cumulativeTrigger) return true;
+    const required = m.cumulativeCount || 3;
+    const progress = bot.cumulativeProgress || {};
+    return (progress[m.cumulativeTrigger] || 0) >= required;
+  });
   // Team mode: filter out AOE attacks (would hit teammates)
   const isTeamMode = bot.team !== undefined;
   const available = isTeamMode

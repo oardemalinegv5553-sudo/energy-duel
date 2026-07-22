@@ -112,7 +112,7 @@ export class GameEngine {
 
       const memory = room.botMemories.get(bot.id) || createBotMemory();
       const { moveId, targets } = chooseBotMove(
-        bot.botLevel || 'easy', bot, room.getAllPlayers(), room.round, memory
+        bot.botLevel || 'easy', bot, room.getAllPlayers(), room.round, memory, room.shatteredSkills
       );
       // Validate & submit
       const moveDef = getMoveById(moveId);
@@ -198,7 +198,7 @@ export class GameEngine {
     for (const hardBot of hardBots) {
       if (!room.pendingMoves.has(hardBot.id)) {
         const { moveId, targets } = chooseHardBotMove(
-          hardBot, room.getAllPlayers(), room.pendingMoves
+          hardBot, room.getAllPlayers(), room.pendingMoves, room.shatteredSkills
         );
         const moveDef = getMoveById(moveId);
         if (moveDef && hardBot.energy >= moveDef.cost) {
@@ -252,6 +252,9 @@ export class GameEngine {
 
     // Apply 观音坐莲 buffs (before death check!)
     this.applyGuanyinBuff(room, resolution);
+
+    // Apply 击碎 (before death check — shatter removes victims from deaths)
+    this.applyShatter(room, resolution);
 
     // Apply deaths
     for (const pid of resolution.deaths) {
@@ -468,6 +471,50 @@ export class GameEngine {
     });
   }
 
+  /** Shatter chain: when a skill is shattered, also shatter linked skills */
+  static readonly SHATTER_CHAIN: Record<string, string[]> = {
+    'jinniu': ['haiwang'],  // 金牛被击碎时，海王也一同被击碎
+  };
+
+  /** Apply shattered skill effects: disable skills without killing the target */
+  applyShatter(room: GameRoom, resolution: RoundResolution): void {
+    const moves = room.pendingMoves;
+    for (const [pid, sub] of moves) {
+      const moveDef = getMoveById(sub.moveId);
+      if (!moveDef || moveDef.specialEffect !== 'shatter') continue;
+
+      for (const targetId of sub.targets) {
+        // Find the corresponding attack record
+        const attack = resolution.attacks.find(a => a.attacker === pid && a.target === targetId && a.landing);
+        if (!attack) continue;
+
+        // Shatter the target skills
+        const targetsToShatter = moveDef.shatterTargets || (moveDef.shatterTarget ? [moveDef.shatterTarget] : []);
+        for (const skillId of targetsToShatter) {
+          room.shatteredSkills.add(skillId);
+          // Chain shatter
+          const chain = GameEngine.SHATTER_CHAIN[skillId];
+          if (chain) {
+            for (const chained of chain) {
+              room.shatteredSkills.add(chained);
+            }
+          }
+        }
+
+        // Remove victim from deaths (shatter doesn't kill)
+        resolution.deaths = resolution.deaths.filter(d => d !== targetId);
+        delete resolution.deathDetails[targetId];
+
+        // Update attack description
+        const victimName = room.players.get(targetId)?.nickname || '?';
+        const shatteredNames = targetsToShatter
+          .map(s => getMoveById(s)?.name || s)
+          .join('、');
+        attack.description = `击碎！${victimName} 的「${shatteredNames}」被禁用`;
+      }
+    }
+  }
+
   /** Full round resolution pipeline */
   resolveFullRound(room: GameRoom): RoundResolution {
     const players = room.getAllPlayers();
@@ -504,11 +551,7 @@ export class GameEngine {
     }
 
     // Step 3: Attack resolution
-    const { attacks, deaths, deathDetails, shatters } = resolveAttacks(players, moves, duoKills);
-    // Apply shattered skills
-    for (const skillId of shatters) {
-      room.shatteredSkills.add(skillId);
-    }
+    const { attacks, deaths, deathDetails } = resolveAttacks(players, moves, duoKills);
 
     // Track cumulative counters: increment base skills, reset triggered moves
     for (const [pid, sub] of moves) {
@@ -583,7 +626,6 @@ export class GameEngine {
       deathDetails,
       teamKillMessages: teamKillMessages.length > 0 ? teamKillMessages : undefined,
       duoKillers: Object.keys(duoKillers).length > 0 ? duoKillers : undefined,
-      shatters: shatters.length > 0 ? shatters : undefined,
     };
   }
 
