@@ -501,9 +501,11 @@ export class GameEngine {
           }
         }
 
-        // Remove victim from deaths (shatter doesn't kill)
-        resolution.deaths = resolution.deaths.filter(d => d !== targetId);
-        delete resolution.deathDetails[targetId];
+        // Remove victim from deaths only if not 跺-killed
+        if (!resolution.deathDetails[targetId]?.includes('跺')) {
+          resolution.deaths = resolution.deaths.filter(d => d !== targetId);
+          delete resolution.deathDetails[targetId];
+        }
 
         // Update attack description
         const victimName = room.players.get(targetId)?.nickname || '?';
@@ -593,13 +595,13 @@ export class GameEngine {
       }
     }
 
-    // Add 跺 kills to deaths
+    // Add 跺 kills to deaths (overwrite any shatter death reason)
     for (const pid of duoKills) {
       if (!deaths.includes(pid)) {
         deaths.push(pid);
-        const name = playerMap.get(pid)?.nickname || pid;
-        deathDetails[pid] = `${name} 被「跺」反制击杀`;
       }
+      const name = playerMap.get(pid)?.nickname || pid;
+      deathDetails[pid] = `${name} 被「跺」反制击杀`;
     }
 
     // Build move display

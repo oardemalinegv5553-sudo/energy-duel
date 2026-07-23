@@ -39,7 +39,7 @@ export const ALL_MOVES: ClientMoveDef[] = [
   { id: 'xiaomao', name: '小毛', level: 6, cost: 1, type: 'attack', atk: 25, def: 0, targetType: 'single', description: '攻 25，破「抿」；与「龙爪」平手' },
   // Level 7
   { id: 'ou',  name: '欧',  level: 7, cost: 0, type: 'special',  atk: 0, def: 0, targetType: 'single', description: '二倍窃取目标本回合气数' },
-  { id: 'duo', name: '跺',  level: 7, cost: 0, type: 'special',  atk: 0, def: 0, targetType: 'none',   description: '全场反制欧：所有欧使用者被杀', globalUnlock: true },
+  { id: 'duo', name: '跺',  level: 7, cost: 0, type: 'special',  atk: 0, def: 0, targetType: 'none',   description: '反制「欧」，击杀以自己为目标的欧使用者', globalUnlock: true },
   // Level 8
   { id: 'damao',     name: '大毛',       level: 8, cost: 1, type: 'attack', atk: 25, def: 0, targetType: 'dual', description: '双目标各 25 攻' },
   { id: 'daxiaomao', name: '大小毛结合', level: 8, cost: 3, type: 'attack', atk: 50, def: 0, targetType: 'dual', description: '双目标各 50 攻' },
@@ -66,7 +66,7 @@ export const ALL_MOVES: ClientMoveDef[] = [
   { id: 'jinniu_top',   name: '金牛漩涡顶', level: 15, cost: 0, type: 'attack',  atk: 75, def: 0, targetType: 'single', description: '3次金牛发动，击碎金牛园丁', cumulativeTrigger: 'jinniu', cumulativeCount: 3 },
   // Level 16
   { id: 'haiwang',       name: '海王',     level: 16, cost: 0, type: 'defense', atk: 0, def: 75, targetType: 'none', description: '防 75' },
-  { id: 'haiwang_quake', name: '海王震天', level: 16, cost: 0, type: 'attack',  atk: 75, def: 0, targetType: 'all',  description: '3次海王发动，全体击碎园丁金牛', cumulativeTrigger: 'haiwang', cumulativeCount: 3 },
+  { id: 'haiwang_quake', name: '海王震天', level: 16, cost: 0, type: 'attack',  atk: 75, def: 0, targetType: 'all',  description: '3次海王发动，全体击碎园丁、金牛、海王', cumulativeTrigger: 'haiwang', cumulativeCount: 3 },
   // Level 17
   { id: 'gangcha',    name: '钢叉',     level: 17, cost: 1, type: 'attack', atk: 60, def: 0, targetType: 'single', description: '攻 60' },
   { id: 'shuangguan', name: '双管齐下', level: 17, cost: 3, type: 'attack', atk: 80, def: 0, targetType: 'single', description: '攻 80' },

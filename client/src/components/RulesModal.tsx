@@ -64,9 +64,9 @@ export default function RulesModal({ show, onClose }: Props) {
           <li>有人死亡后 / 下一局重置</li>
         </ul>
 
-        <h3>跺（全场反制）</h3>
+        <h3>跺（反制欧）</h3>
         <ul>
-          <li>只要有人使用「跺」，场上<strong>所有</strong>欧使用者均被跺使用者击杀</li>
+          <li>使用「跺」后，本回合所有<strong>以跺使用者为目标</strong>的欧使用者被跺使用者击杀</li>
         </ul>
 
         <h3>招式总览</h3>
