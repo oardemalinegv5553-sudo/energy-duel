@@ -3,7 +3,7 @@ import { MoveDef } from '../../../shared/types';
 export const MOVES: MoveDef[] = [
   // ===== Level 1 =====
   { id: 'yun',    name: '运',   level: 1, cost: 0, type: 'charge',  atk: 0,  def: 0,   targetType: 'none',   description: '积攒 1 气' },
-  { id: 'fang',   name: '防',   level: 1, cost: 0, type: 'defense', atk: 0,  def: 10,  targetType: 'none',   description: '防御 10，抵挡「波」' },
+  { id: 'fang',   name: '防',   level: 1, cost: 0, type: 'defense', atk: 0,  def: 30,  targetType: 'none',   description: '防御 30，抵挡「波」' },
   { id: 'bo',     name: '波',   level: 1, cost: 1, type: 'attack',  atk: 10, def: 0,   targetType: 'single', description: '基础攻击 10' },
   { id: 'guaji',  name: '挂机', level: 1, cost: 3, type: 'attack',  atk: 50, def: 0,   targetType: 'single', description: '重击 50，破「防」「波」' },
   { id: 'chaofang', name: '超防', level: 1, cost: 1, type: 'defense', atk: 0, def: 50, targetType: 'none',  description: '防御 50，抵挡「挂机」' },

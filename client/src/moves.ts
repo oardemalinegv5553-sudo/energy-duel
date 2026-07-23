@@ -19,7 +19,7 @@ export interface ClientMoveDef {
 export const ALL_MOVES: ClientMoveDef[] = [
   // Level 1
   { id: 'yun',    name: '运',   level: 1, cost: 0,   type: 'charge',  atk: 0,  def: 0,   targetType: 'none',   description: '积攒 1 气' },
-  { id: 'fang',   name: '防',   level: 1, cost: 0,   type: 'defense', atk: 0,  def: 10,  targetType: 'none',   description: '防 10，挡「波」' },
+  { id: 'fang',   name: '防',   level: 1, cost: 0,   type: 'defense', atk: 0,  def: 30,  targetType: 'none',   description: '防 30，挡「波」' },
   { id: 'bo',     name: '波',   level: 1, cost: 1,   type: 'attack',  atk: 10, def: 0,   targetType: 'single', description: '攻 10' },
   { id: 'guaji',  name: '挂机', level: 1, cost: 3,   type: 'attack',  atk: 50, def: 0,   targetType: 'single', description: '攻 50，破「防」「波」' },
   { id: 'chaofang', name: '超防', level: 1, cost: 1, type: 'defense', atk: 0,  def: 50,  targetType: 'none',   description: '防 50，挡「挂机」' },
