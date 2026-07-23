@@ -476,23 +476,29 @@ export class GameEngine {
     'jinniu': ['haiwang'],  // 金牛被击碎时，海王也一同被击碎
   };
 
-  /** Apply shattered skill effects: disable skills without killing the target */
+  /** Apply shattered skill effects: disable skills without killing the target.
+   *  Only triggers when the target is actually using a shatterable skill. */
   applyShatter(room: GameRoom, resolution: RoundResolution): void {
     const moves = room.pendingMoves;
     for (const [pid, sub] of moves) {
       const moveDef = getMoveById(sub.moveId);
       if (!moveDef || moveDef.specialEffect !== 'shatter') continue;
 
+      const targetsToShatter = moveDef.shatterTargets || (moveDef.shatterTarget ? [moveDef.shatterTarget] : []);
+
       for (const targetId of sub.targets) {
+        // Check if the target is actually using a shatterable skill
+        const targetSub = moves.get(targetId);
+        const targetMove = targetSub ? getMoveById(targetSub.moveId) : null;
+        if (!targetMove || !targetsToShatter.includes(targetMove.id)) continue;
+
         // Find the corresponding attack record
         const attack = resolution.attacks.find(a => a.attacker === pid && a.target === targetId && a.landing);
         if (!attack) continue;
 
-        // Shatter the target skills
-        const targetsToShatter = moveDef.shatterTargets || (moveDef.shatterTarget ? [moveDef.shatterTarget] : []);
+        // Shatter the target's skill (and chained skills)
         for (const skillId of targetsToShatter) {
           room.shatteredSkills.add(skillId);
-          // Chain shatter
           const chain = GameEngine.SHATTER_CHAIN[skillId];
           if (chain) {
             for (const chained of chain) {
