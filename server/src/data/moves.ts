@@ -29,7 +29,7 @@ export const MOVES: MoveDef[] = [
 
   // ===== Level 7 =====
   { id: 'ou',  name: '欧',  level: 7, cost: 0, type: 'special',  atk: 0, def: 0, targetType: 'single', description: '二倍窃取目标本回合获得的气数', specialEffect: 'ou_steal' },
-  { id: 'duo', name: '跺',  level: 7, cost: 0, type: 'special',  atk: 0, def: 0, targetType: 'none',   description: '全场反制：所有欧使用者被跺使用者击杀', specialEffect: 'duo_counter', globalUnlock: true },
+  { id: 'duo', name: '跺',  level: 7, cost: 0, type: 'special',  atk: 0, def: 0, targetType: 'none',   description: '反制「欧」，击杀以自己为目标的欧使用者', specialEffect: 'duo_counter', globalUnlock: true },
 
   // ===== Level 8 =====
   { id: 'damao',     name: '大毛',       level: 8, cost: 1, type: 'attack', atk: 25, def: 0, targetType: 'dual', description: '双目标各 25 攻' },

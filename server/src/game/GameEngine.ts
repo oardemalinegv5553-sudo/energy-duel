@@ -523,29 +523,25 @@ export class GameEngine {
     // Step 1: Energy resolution
     const { energyChanges, ouChain } = resolveEnergy(players, moves);
 
-    // Step 2: 跺 counter-kill — global: ALL 欧 users killed by 跺 user
+    // Step 2: 跺 counter-kill — kills 欧 users who target the 跺 user
     const duoKills = new Set<string>();
     const duoKillers: Record<string, string> = {};  // victimId → killerId
-    const duoUsers: string[] = [];
     for (const p of players) {
       if (!p.alive) continue;
       const sub = moves.get(p.id);
       if (!sub) continue;
       const moveDef = getMoveById(sub.moveId);
-      if (moveDef?.specialEffect === 'duo_counter') {
-        duoUsers.push(p.id);
-      }
-    }
-    if (duoUsers.length > 0) {
-      const killer = duoUsers[0]; // first 跺 user kills all 欧 users
+      if (!moveDef || moveDef.specialEffect !== 'duo_counter') continue;
+
+      // Check who is using 欧 on this 跺 user
       for (const other of players) {
-        if (!other.alive) continue;
+        if (!other.alive || other.id === p.id) continue;
         const otherSub = moves.get(other.id);
         if (!otherSub) continue;
         const otherMove = getMoveById(otherSub.moveId);
-        if (otherMove?.specialEffect === 'ou_steal') {
+        if (otherMove?.specialEffect === 'ou_steal' && otherSub.targets.includes(p.id)) {
           duoKills.add(other.id);
-          duoKillers[other.id] = killer;
+          duoKillers[other.id] = p.id;
         }
       }
     }
