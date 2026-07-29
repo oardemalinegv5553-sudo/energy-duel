@@ -14,7 +14,6 @@ export interface UserRecord {
 
 export interface UserDatabase {
   accounts: UserRecord[];
-  ipRegistrations: Record<string, string>;  // ip → accountId
   nextAccountId: number;
 }
 
@@ -59,7 +58,7 @@ export class AuthManager {
   // Public API
   // ================================================================
 
-  register(username: string, password: string, ip: string): AuthResult {
+  register(username: string, password: string, _ip: string): AuthResult {
     // Validate inputs
     const usernameTrimmed = username.trim();
     if (!USERNAME_REGEX.test(usernameTrimmed)) {
@@ -70,12 +69,6 @@ export class AuthManager {
     }
 
     const db = this.loadDb();
-
-    // Check IP uniqueness
-    const normalizedIp = this.normalizeIp(ip);
-    if (db.ipRegistrations[normalizedIp]) {
-      return { success: false, error: '该IP已注册过账号' };
-    }
 
     // Check username uniqueness (case-insensitive)
     const existing = db.accounts.find(
@@ -94,12 +87,11 @@ export class AuthManager {
       accountId,
       username: usernameTrimmed,
       passwordHash,
-      registrationIp: normalizedIp,
+      registrationIp: '',
       createdAt: now,
     };
 
     db.accounts.push(record);
-    db.ipRegistrations[normalizedIp] = accountId;
     db.nextAccountId++;
 
     this.saveDb(db);
@@ -112,7 +104,7 @@ export class AuthManager {
       createdAt: Date.now(),
     });
 
-    console.log(`[auth] Registered: ${usernameTrimmed} (${accountId}) from ${normalizedIp}`);
+    console.log(`[auth] Registered: ${usernameTrimmed} (${accountId})`);
     return { success: true, accountId, username: usernameTrimmed, token };
   }
 
@@ -213,11 +205,6 @@ export class AuthManager {
     return 'A' + String(nextId).padStart(6, '0');
   }
 
-  private normalizeIp(ip: string): string {
-    // IPv6 localhost → IPv4
-    if (ip === '::1' || ip === '::ffff:127.0.0.1') return '127.0.0.1';
-    return ip;
-  }
 
   // ================================================================
   // Persistence
@@ -231,7 +218,6 @@ export class AuthManager {
     if (!existsSync(this.dbPath)) {
       const initial: UserDatabase = {
         accounts: [],
-        ipRegistrations: {},
         nextAccountId: 1,
       };
       writeFileSync(this.dbPath, JSON.stringify(initial, null, 2), 'utf-8');
@@ -245,7 +231,7 @@ export class AuthManager {
       return JSON.parse(raw) as UserDatabase;
     } catch (e) {
       console.error('[auth] Failed to read user database, starting fresh:', e);
-      return { accounts: [], ipRegistrations: {}, nextAccountId: 1 };
+      return { accounts: [], nextAccountId: 1 };
     }
   }
 
