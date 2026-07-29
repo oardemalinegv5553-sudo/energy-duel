@@ -8,6 +8,7 @@
  *   npx tsx server/src/simulate.ts --bot1 trivial --bot2 normal --level 5
  *   npx tsx server/src/simulate.ts --all --games 30                   # 所有两两组合
  *   npx tsx server/src/simulate.ts --bot1 trivial --bot2 normal --verbose  # 打印每局详情
+ *   npx tsx server/src/simulate.ts --bot1 trivial --bot2 normal --level 1 --session 10  # 10局连续升级
  */
 
 import { GameEngine } from './game/GameEngine';
@@ -27,6 +28,7 @@ interface SimConfig {
   level: number;
   games: number;
   verbose: boolean;
+  session: boolean;
 }
 
 function parseArgs(): SimConfig | 'all' {
@@ -43,8 +45,9 @@ function parseArgs(): SimConfig | 'all' {
     bot1: (get('--bot1') || 'trivial') as BotLevel,
     bot2: (get('--bot2') || 'normal') as BotLevel,
     level: parseInt(get('--level') || '5', 10),
-    games: parseInt(get('--games') || '20', 10),
+    games: parseInt(get('--games') || get('--session') || '20', 10),
     verbose: has('--verbose') || has('-v'),
+    session: has('--session'),
   };
 
   if (all) return 'all';
@@ -275,7 +278,7 @@ function runAllMatchups(games: number) {
   for (const level of levels) {
     for (let i = 0; i < bots.length; i++) {
       for (let j = i + 1; j < bots.length; j++) {
-        const stats = runBatch({ bot1: bots[i], bot2: bots[j], level, games, verbose: false });
+        const stats = runBatch({ bot1: bots[i], bot2: bots[j], level, games, verbose: false, session: false });
         allStats.push(stats);
       }
     }
@@ -313,6 +316,123 @@ function runAllMatchups(games: number) {
 }
 
 // ================================================================
+// Session runner — multi-game with level progression
+// ================================================================
+
+interface SessionEntry {
+  game: number;
+  winner: string;
+  rounds: number;
+  bot1Level: number;
+  bot2Level: number;
+}
+
+function runSession(config: SimConfig) {
+  console.log(`\n${'═'.repeat(62)}`);
+  console.log(`  升级对局  ${botName(config.bot1)}(${config.bot1})  vs  ${botName(config.bot2)}(${config.bot2})  起步 Lv.${config.level}  ×${config.games}局`);
+  console.log(`${'═'.repeat(62)}`);
+
+  let gameOverData: any = null;
+  let lastResolution: RoundResolution | null = null;
+
+  const mockIo = {
+    to: (_room: string) => ({
+      emit: (event: string, data: any) => {
+        if (event === 'phase_change' && data.resolution) {
+          lastResolution = data.resolution as RoundResolution;
+        }
+        if (event === 'game_over') {
+          gameOverData = data;
+        }
+      },
+    }),
+  } as any;
+
+  const engine = new GameEngine(mockIo);
+  const room = new GameRoom('SIM', 'duo');
+  room.initialLevel = config.level;
+
+  const bot1 = room.addBot(botName(config.bot1), config.bot1);
+  const bot2 = room.addBot(botName(config.bot2), config.bot2);
+  bot1.level = config.level;
+  bot2.level = config.level;
+
+  const history: SessionEntry[] = [];
+  let wins1 = 0, wins2 = 0;
+  const startTime = Date.now();
+
+  for (let g = 1; g <= config.games; g++) {
+    // Reset tracking state for this game
+    gameOverData = null;
+    lastResolution = null;
+
+    // Reset room (revive, clear energy, keep levels + botMemories)
+    if (g > 1) {
+      room.resetForNewGame();
+    }
+
+    engine.startGame(room);
+
+    // Advance through rounds until game ends
+    while (room.phase !== 'finished' && room.round < MAX_ROUNDS) {
+      room.clearTimer();
+      const aliveAfter = room.getAlivePlayers();
+      const upgradeSlots = Math.floor(room.initialPlayerCount / 2);
+      if (aliveAfter.length <= upgradeSlots) {
+        engine.endGame(room);
+        break;
+      }
+      const res = lastResolution;
+      const hadDeaths = ((res as RoundResolution | null)?.deaths?.length ?? 0) > 0;
+      if (hadDeaths) {
+        for (const p of aliveAfter) p.energy = 0;
+      }
+      room.round++;
+      engine.startThinkingPhase(room);
+    }
+
+    // Determine winner
+    let winnerName: string;
+    if (gameOverData?.rankings?.[0]) {
+      if (gameOverData.rankings[0].playerId === bot1.id) {
+        winnerName = botName(config.bot1); wins1++;
+      } else if (gameOverData.rankings[0].playerId === bot2.id) {
+        winnerName = botName(config.bot2); wins2++;
+      } else {
+        winnerName = '?';
+      }
+    } else {
+      // Fallback: check alive state
+      if (bot1.alive && !bot2.alive) { winnerName = botName(config.bot1); wins1++; }
+      else if (!bot1.alive && bot2.alive) { winnerName = botName(config.bot2); wins2++; }
+      else winnerName = '平局';
+    }
+
+    history.push({
+      game: g,
+      winner: winnerName,
+      rounds: room.round,
+      bot1Level: bot1.level,
+      bot2Level: bot2.level,
+    });
+
+    if (config.verbose || g % 5 === 0 || g === config.games) {
+      const e = ((Date.now() - startTime) / 1000).toFixed(0);
+      console.log(`  G${String(g).padStart(2)}  ${winnerName.padEnd(8)} 胜  ${String(room.round).padStart(2)}回合  Lv.${String(bot1.level).padStart(2)} vs ${String(bot2.level).padStart(2)}  (${e}s)`);
+    }
+  }
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`\n  ┌${'─'.repeat(58)}┐`);
+  console.log(`  │ ${botName(config.bot1).padEnd(8)} 胜: ${String(wins1).padStart(3)} (${String(Math.round(wins1/config.games*100)).padStart(3)}%)  最终 Lv.${String(bot1.level).padStart(2)}          │`);
+  console.log(`  │ ${botName(config.bot2).padEnd(8)} 胜: ${String(wins2).padStart(3)} (${String(Math.round(wins2/config.games*100)).padStart(3)}%)  最终 Lv.${String(bot2.level).padStart(2)}          │`);
+  console.log(`  │ 耗时: ${elapsed.padStart(5)}s                              │`);
+  console.log(`  └${'─'.repeat(58)}┘`);
+
+  return { wins1, wins2, history, finalLevel1: bot1.level, finalLevel2: bot2.level };
+}
+
+// ================================================================
 // Main
 // ================================================================
 
@@ -321,6 +441,8 @@ function main() {
 
   if (config === 'all') {
     runAllMatchups(20);
+  } else if (config.session) {
+    runSession(config);
   } else {
     runBatch(config);
   }
