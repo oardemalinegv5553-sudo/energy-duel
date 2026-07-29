@@ -156,10 +156,28 @@ function mctsSmartPick(
     // Otherwise fall through to charge/defend
   }
 
-  // Priority 3: baseScore-weighted, biased toward building energy for future plans
+  // Priority 2.5: Can't break baseline defense (防=30) → charge for a bigger attack
+  // Uses 30 as threshold because 防 is the universal defense everyone uses;
+  // 超防(50) costs energy and is situational — having 50+ ATK still kills through 防.
+  if (attacks.length > 0 && oppDefRate > 0.2) {
+    const BREAK_THRESHOLD = 30; // 防 is the baseline defense
+    const canBreak = attacks.some(m => m.atk > BREAK_THRESHOLD);
+    if (!canBreak) {
+      const allMyMoves = getMovesByLevel(player.level);
+      const needEnergy = allMyMoves
+        .filter(m => m.atk > BREAK_THRESHOLD && m.cost > player.energy && m.cost <= player.energy + 2)
+        .sort((a, b) => a.cost - b.cost);
+      if (needEnergy.length > 0 && Math.random() < 0.8) {
+        const charges = myMoves.filter(m => m.type === 'charge');
+        if (charges.length > 0) return randPick(charges);
+      }
+    }
+  }
+
+  // Priority 3: baseScore-weighted, strongly biased toward charging
   const scored = myMoves.map(m => {
     let s = baseScore(m, player, opponent);
-    if (m.type === 'charge') s += 6;
+    if (m.type === 'charge') s += 20; // heavy bias: charge to reach game-breaking attacks
     s += noise(5);
     return { move: m, score: s };
   });
@@ -169,7 +187,7 @@ function mctsSmartPick(
 
 // ---- MCTS rollout (smart for self, baseScore-weighted for opponent) ----
 function mctsSimulate(state: MCTSState, botLevel: number, oppLevel: number, depth: number): number {
-  if (depth >= 12) return mctsEvalState(state);
+  if (depth >= 12) return -200; // stalemate penalty: path led nowhere (increased from -30)
 
   const myMoves = getMovesByLevel(botLevel).filter(m => state.myEnergy >= m.cost);
   const oppMoves = getMovesByLevel(oppLevel).filter(m => state.oppEnergy >= m.cost);
