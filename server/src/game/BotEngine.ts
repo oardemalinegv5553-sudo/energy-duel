@@ -91,6 +91,132 @@ export function createBotMemory(): BotMemory {
 const RECURSE_DEPTH = 5;
 const CANDIDATE_COUNT = 6;
 
+// ================================================================
+// MCTS Trivial Bot — lightweight Monte Carlo Tree Search
+// ================================================================
+
+const MCTS_SIMULATIONS = 200;
+
+interface MCTSState {
+  myEnergy: number; oppEnergy: number;
+  myLevel: number; oppLevel: number;
+  round: number;
+}
+
+interface MCTSNode {
+  visits: number;
+  totalScore: number;
+  children: Record<string, MCTSNode>;
+  state: MCTSState;
+}
+
+function mctsKey(myMove: string, oppMove: string): string {
+  return `${myMove}|${oppMove}`;
+}
+
+function mctsUCB1(node: MCTSNode, parentVisits: number): number {
+  if (node.visits === 0) return Infinity;
+  const exploitation = node.totalScore / node.visits;
+  const exploration = Math.sqrt(2 * Math.log(parentVisits) / node.visits);
+  return exploitation + exploration;
+}
+
+function mctsSimulate(state: MCTSState, botLevel: number, oppLevel: number, depth: number): number {
+  if (depth >= 12) return mctsEvalState(state);
+
+  const myMoves = getMovesByLevel(botLevel).filter(m => state.myEnergy >= m.cost);
+  const oppMoves = getMovesByLevel(oppLevel).filter(m => state.oppEnergy >= m.cost);
+  if (myMoves.length === 0 && oppMoves.length === 0) return mctsEvalState(state);
+
+  const myMove = myMoves.length > 0 ? randPick(myMoves) : getMoveById('yun')!;
+  const oppMove = oppMoves.length > 0 ? randPick(oppMoves) : getMoveById('yun')!;
+
+  const outcome = evalExchange(myMove, oppMove,
+    { energy: state.myEnergy, level: botLevel } as any,
+    { energy: state.oppEnergy, level: oppLevel } as any);
+
+  if (outcome.oppDeath) return 1000;
+  if (outcome.myDeath) return -1000;
+
+  return mctsSimulate({
+    myEnergy: state.myEnergy - myMove.cost + outcome.myEnergyDelta,
+    oppEnergy: state.oppEnergy - oppMove.cost + outcome.oppEnergyDelta,
+    myLevel: botLevel,
+    oppLevel: oppLevel,
+    round: state.round + 1,
+  }, botLevel, oppLevel, depth + 1);
+}
+
+function mctsEvalState(state: MCTSState): number {
+  // Simple heuristic: prefer having more energy, higher level
+  return (state.myEnergy - state.oppEnergy) * 8 + (state.myLevel - state.oppLevel) * 3;
+}
+
+function trivialBot(
+  bot: PlayerState, available: MoveDef[], others: PlayerState[],
+  _round: number, _memory: BotMemory
+): { moveId: string; targets: string[] } {
+  const affordable = available.filter(m => bot.energy >= m.cost);
+  if (affordable.length === 0) return { moveId: 'yun', targets: [] };
+
+  const opp = others[0];
+  const oppAvailable = getMovesByLevel(opp.level).filter(m => opp.energy >= m.cost);
+  if (oppAvailable.length === 0) {
+    const atks = affordable.filter(m => m.atk > 0);
+    if (atks.length > 0) return makeTargets(randPick(atks), bot, others);
+    return makeTargets(getMoveById('yun')!, bot, others);
+  }
+
+  const rootState: MCTSState = {
+    myEnergy: bot.energy,
+    oppEnergy: opp.energy,
+    myLevel: bot.level,
+    oppLevel: opp.level,
+    round: 1,
+  };
+
+  // Run MCTS for each candidate move
+  const scores: { move: MoveDef; score: number }[] = [];
+
+  for (const myMove of affordable) {
+    let totalScore = 0;
+    for (let sim = 0; sim < MCTS_SIMULATIONS; sim++) {
+      // Opponent: weighted random from top-scored moves
+      const oppScored = oppAvailable
+        .slice(0, 8)
+        .map(m => ({ move: m, s: baseScore(m, opp, bot) + Math.random() * 8 }))
+        .sort((a, b) => b.s - a.s);
+      const oppMove = oppScored.length <= 2
+        ? oppScored[0].move
+        : randPick(oppScored.slice(0, 3).map(x => x.move));
+
+      const outcome = evalExchange(myMove, oppMove, bot, opp);
+
+      if (outcome.oppDeath) {
+        totalScore += 1000;
+      } else if (outcome.myDeath) {
+        totalScore -= 1000;
+      } else {
+        const nextState: MCTSState = {
+          myEnergy: bot.energy - myMove.cost + outcome.myEnergyDelta,
+          oppEnergy: opp.energy - oppMove.cost + outcome.oppEnergyDelta,
+          myLevel: bot.level,
+          oppLevel: opp.level,
+          round: 2,
+        };
+        totalScore += mctsEvalState(nextState)
+          + mctsSimulate(nextState, bot.level, opp.level, 2) * 0.5;
+      }
+    }
+    scores.push({ move: myMove, score: totalScore / MCTS_SIMULATIONS });
+  }
+
+  scores.sort((a, b) => b.score - a.score);
+  return makeTargets(scores[0].move, bot, others);
+}
+
+// ================================================================
+
 export function chooseBotMove(
   level: BotLevel, bot: PlayerState, allPlayers: PlayerState[],
   round: number, memory: BotMemory, shatteredSkills?: Set<string>
@@ -116,6 +242,11 @@ export function chooseBotMove(
   const available = isTeamMode
     ? allAvailable.filter(m => m.targetType !== 'all')
     : allAvailable;
+
+  // === TRIVIAL BOT: MCTS ===
+  if (level === 'trivial') {
+    return trivialBot(bot, available, others, round, memory);
+  }
 
   // === EASY BOT: complex strategy system (minimax + adaptation + stuck detection) ===
   if (level === 'easy') {
