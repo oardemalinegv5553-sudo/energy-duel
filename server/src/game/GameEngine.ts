@@ -480,7 +480,7 @@ export class GameEngine {
   };
 
   /** Apply shattered skill effects: disable skills without killing the target.
-   *  Only triggers when the target is actually using a shatterable skill. */
+   *  Shatter bypasses normal defense — if target uses a shatterable skill, it IS shattered. */
   applyShatter(room: GameRoom, resolution: RoundResolution): void {
     const moves = room.pendingMoves;
     for (const [pid, sub] of moves) {
@@ -495,11 +495,10 @@ export class GameEngine {
         const targetMove = targetSub ? getMoveById(targetSub.moveId) : null;
         if (!targetMove || !targetsToShatter.includes(targetMove.id)) continue;
 
-        // Find the corresponding attack record
-        const attack = resolution.attacks.find(a => a.attacker === pid && a.target === targetId && a.landing);
-        if (!attack) continue;
+        // Attacker must not be 跺-killed (can't shatter if counter-killed)
+        if (resolution.deathDetails[pid]?.includes('跺')) continue;
 
-        // Shatter the target's skill (and chained skills)
+        // Shatter the target's skill (and chained skills) — bypasses defense
         for (const skillId of targetsToShatter) {
           room.shatteredSkills.add(skillId);
           const chain = GameEngine.SHATTER_CHAIN[skillId];
@@ -510,18 +509,21 @@ export class GameEngine {
           }
         }
 
-        // Remove victim from deaths only if not 跺-killed
+        // Remove victim from deaths (shatter doesn't kill) — unless 跺-killed
         if (!resolution.deathDetails[targetId]?.includes('跺')) {
           resolution.deaths = resolution.deaths.filter(d => d !== targetId);
           delete resolution.deathDetails[targetId];
         }
 
-        // Update attack description
-        const victimName = room.players.get(targetId)?.nickname || '?';
-        const shatteredNames = targetsToShatter
-          .map(s => getMoveById(s)?.name || s)
-          .join('、');
-        attack.description = `击碎！${victimName} 的「${shatteredNames}」被禁用`;
+        // Find the attack record and update description
+        const attack = resolution.attacks.find(a => a.attacker === pid && a.target === targetId);
+        if (attack) {
+          const victimName = room.players.get(targetId)?.nickname || '?';
+          const shatteredNames = targetsToShatter
+            .map(s => getMoveById(s)?.name || s)
+            .join('、');
+          attack.description = `击碎！${victimName} 的「${shatteredNames}」被禁用`;
+        }
       }
     }
   }
