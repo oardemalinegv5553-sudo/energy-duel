@@ -236,10 +236,15 @@ function easyBot(
     return makeTargets(getMoveById('yun')!, bot, others);
   }
 
-  const myCandidates = rankCandidates(affordable, bot, opp, memory);
+  // Quick-score pre-filter: top-5 by baseScore, then minimax only those
+  const myTop5 = affordable
+    .map(m => ({ move: m, score: baseScore(m, bot, opp) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+    .map(s => s.move);
   const oppCandidates = rankCandidates(oppAvailable, opp, bot, memory);
 
-  const scored = myCandidates.map(m => ({
+  const scored = myTop5.map(m => ({
     move: m,
     score: minimaxEval(m, oppCandidates, bot, opp, RECURSE_DEPTH, memory),
   }));
@@ -367,16 +372,12 @@ function normalBot(
   }
 
   // ============================================================
-  // === Score + Random (only among reasonable moves) ===
+  // === Simple scoring + top-N random (no minimax for normal) ===
   // ============================================================
-
-  const oppCandidates = oppAllAvailable.length > 0
-    ? rankCandidates(oppAllAvailable, opp, bot, memory).slice(0, CANDIDATE_COUNT)
-    : [getMoveById('yun')!];
 
   const scored = reasonable.map(m => ({
     move: m,
-    score: minimaxEval(m, oppCandidates, bot, opp, RECURSE_DEPTH, memory),
+    score: baseScore(m, bot, opp) + noise(5),
   }));
   scored.sort((a, b) => b.score - a.score);
 
