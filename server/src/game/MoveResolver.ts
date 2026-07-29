@@ -71,7 +71,8 @@ export function resolveAttacks(
       }
 
       const targetIsAttackingBack = targetMove && targetMove.atk > 0 &&
-        targetSub!.targets.includes(pa.attackerId);
+        targetSub!.targets.includes(pa.attackerId) &&
+        !deaths.includes(pa.attackerId); // already dead → not a mutual fight
       const targetIsDefending = targetMove && targetMove.def > 0;
       const targetIsLongdun = targetMove?.specialEffect === 'longdun_block';
       const targetIsDudun = targetMove?.specialEffect === 'dudun_block';

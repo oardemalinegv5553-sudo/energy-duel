@@ -269,7 +269,10 @@ export class GameEngine {
     // Reset shatter state + cumulative counters when someone dies (§3.6, §3.7)
     if (resolution.deaths.length > 0) {
       room.shatteredSkills.clear();
-      room.cumulativeCounters = {};
+      // Only reset cumulative counters for dead players (survivors keep progress)
+      for (const pid of resolution.deaths) {
+        delete room.cumulativeCounters[pid];
+      }
     }
 
     // Record opponent moves for bots (learning)
