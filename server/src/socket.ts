@@ -288,7 +288,7 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
         socket.emit('error', { message: '每个房间只能添加一个困难人机' });
         return;
       }
-      const levelLabel = data.level === 'easy' ? '简单人机' : data.level === 'hard' ? '困难人机' : '普通人机';
+      const levelLabel = data.level === 'easy' ? '简单人机' : data.level === 'hard' ? '困难人机' : data.level === 'trivial' ? '一般人机' : '普通人机';
       const sameLevel = room.getAllPlayers().filter(p => p.isBot && p.botLevel === data.level).length;
       const bot = room.addBot(`${levelLabel}${sameLevel + 1}`, data.level);
       socket.join(room.roomCode);
