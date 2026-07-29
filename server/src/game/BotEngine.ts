@@ -93,9 +93,19 @@ const CANDIDATE_COUNT = 6;
 
 // ================================================================
 // MCTS Trivial Bot — lightweight Monte Carlo Tree Search
+// Uses smart rollout (attack/defend/charge heuristics) + softmax selection
 // ================================================================
 
 const MCTS_SIMULATIONS = 200;
+
+/** Dynamic softmax temperature: randomly sampled each turn within a level-scaled range.
+ *  Low levels (few moves) → colder (greedy, avoid picking bad moves).
+ *  High levels (many moves) → hotter (more unpredictable, harder to pattern-read). */
+function mctsTemperature(level: number): number {
+  const minT = 0.5 + (level - 1) * 0.09;   // Lv.1: 0.5  →  Lv.17: 1.94
+  const maxT = 1.0 + (level - 1) * 0.15;   // Lv.1: 1.0  →  Lv.17: 3.4
+  return minT + Math.random() * (maxT - minT);
+}
 
 interface MCTSState {
   myEnergy: number; oppEnergy: number;
@@ -103,24 +113,61 @@ interface MCTSState {
   round: number;
 }
 
-interface MCTSNode {
-  visits: number;
-  totalScore: number;
-  children: Record<string, MCTSNode>;
-  state: MCTSState;
+function mctsEvalState(state: MCTSState): number {
+  return (state.myEnergy - state.oppEnergy) * 8 + (state.myLevel - state.oppLevel) * 3;
 }
 
-function mctsKey(myMove: string, oppMove: string): string {
-  return `${myMove}|${oppMove}`;
+// ---- Smart rollout picker ----
+// Biases rollout toward human-like play: defend when threatened, attack the exposed,
+// charge otherwise. This lets MCTS discover multi-round plans (charge→charge→挂机).
+function mctsSmartPick(
+  myMoves: MoveDef[], oppMoves: MoveDef[],
+  player: PlayerState, opponent: PlayerState
+): MoveDef {
+  if (myMoves.length === 0) return getMoveById('yun')!;
+
+  const attacks = myMoves.filter(m => m.atk > 0);
+  const defenses = myMoves.filter(m =>
+    m.def > 0 || m.type === 'special_defense' ||
+    m.specialEffect === 'longdun_block' || m.specialEffect === 'dudun_block'
+  );
+
+  const oppAtkRate = oppMoves.length > 0
+    ? oppMoves.filter(m => m.atk > 0).length / oppMoves.length : 0;
+  const oppDefRate = oppMoves.length > 0
+    ? oppMoves.filter(m => m.def > 0 || m.type === 'special_defense').length / oppMoves.length : 0;
+
+  // Priority 1: Opponent threat high → defend
+  if (oppAtkRate > 0.25 && defenses.length > 0 && Math.random() < 0.65) {
+    defenses.sort((a, b) => b.def - a.def);
+    return defenses[0];
+  }
+
+  // Priority 2: Opponent vulnerable → attack (but avoid losing mutual attacks)
+  if (attacks.length > 0 && oppDefRate < 0.5 && Math.random() < 0.55) {
+    const oppMaxAtk = Math.max(...oppMoves.filter(m => m.atk > 0).map(m => m.atk), 0);
+    const myBestAtk = Math.max(...attacks.map(m => m.atk), 0);
+    // Skip attacking if opponent has a much stronger attack (diff≥9 = we die in mutual)
+    const attackIsSafe = oppAtkRate < 0.2 || myBestAtk >= oppMaxAtk || (oppMaxAtk - myBestAtk) < 9;
+    if (attackIsSafe) {
+      attacks.sort((a, b) => (b.atk / Math.max(b.cost, 0.01)) - (a.atk / Math.max(a.cost, 0.01)));
+      return randPick(attacks.slice(0, 2));
+    }
+    // Otherwise fall through to charge/defend
+  }
+
+  // Priority 3: baseScore-weighted, biased toward building energy for future plans
+  const scored = myMoves.map(m => {
+    let s = baseScore(m, player, opponent);
+    if (m.type === 'charge') s += 6;
+    s += noise(5);
+    return { move: m, score: s };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return randPick(scored.slice(0, 3).map(s => s.move));
 }
 
-function mctsUCB1(node: MCTSNode, parentVisits: number): number {
-  if (node.visits === 0) return Infinity;
-  const exploitation = node.totalScore / node.visits;
-  const exploration = Math.sqrt(2 * Math.log(parentVisits) / node.visits);
-  return exploitation + exploration;
-}
-
+// ---- MCTS rollout (smart for self, baseScore-weighted for opponent) ----
 function mctsSimulate(state: MCTSState, botLevel: number, oppLevel: number, depth: number): number {
   if (depth >= 12) return mctsEvalState(state);
 
@@ -128,8 +175,25 @@ function mctsSimulate(state: MCTSState, botLevel: number, oppLevel: number, dept
   const oppMoves = getMovesByLevel(oppLevel).filter(m => state.oppEnergy >= m.cost);
   if (myMoves.length === 0 && oppMoves.length === 0) return mctsEvalState(state);
 
-  const myMove = myMoves.length > 0 ? randPick(myMoves) : getMoveById('yun')!;
-  const oppMove = oppMoves.length > 0 ? randPick(oppMoves) : getMoveById('yun')!;
+  // Self: smart pick (attacks when safe, defends when threatened, charges otherwise)
+  const myMove = myMoves.length > 0
+    ? mctsSmartPick(myMoves, oppMoves,
+        { energy: state.myEnergy, level: botLevel } as any,
+        { energy: state.oppEnergy, level: oppLevel } as any)
+    : getMoveById('yun')!;
+
+  // Opponent: baseScore-weighted random (we model them as "reasonable but not smart")
+  const oppMove = oppMoves.length > 0
+    ? (() => {
+        const scored = oppMoves.map(m => ({
+          move: m, s: baseScore(m,
+            { energy: state.oppEnergy, level: oppLevel } as any,
+            { energy: state.myEnergy, level: botLevel } as any) + noise(6)
+        }));
+        scored.sort((a, b) => b.s - a.s);
+        return randPick(scored.slice(0, 3).map(s => s.move));
+      })()
+    : getMoveById('yun')!;
 
   const outcome = evalExchange(myMove, oppMove,
     { energy: state.myEnergy, level: botLevel } as any,
@@ -147,9 +211,18 @@ function mctsSimulate(state: MCTSState, botLevel: number, oppLevel: number, dept
   }, botLevel, oppLevel, depth + 1);
 }
 
-function mctsEvalState(state: MCTSState): number {
-  // Simple heuristic: prefer having more energy, higher level
-  return (state.myEnergy - state.oppEnergy) * 8 + (state.myLevel - state.oppLevel) * 3;
+// ---- Softmax: prefer good moves but stay unpredictable ----
+function softmaxPick(scores: { move: MoveDef; score: number }[], temperature: number): MoveDef {
+  const maxScore = Math.max(...scores.map(s => s.score));
+  const exps = scores.map(s => Math.exp((s.score - maxScore) / temperature));
+  const total = exps.reduce((a, b) => a + b, 0);
+
+  let r = Math.random() * total;
+  for (let i = 0; i < scores.length; i++) {
+    r -= exps[i];
+    if (r <= 0) return scores[i].move;
+  }
+  return scores[scores.length - 1].move;
 }
 
 function trivialBot(
@@ -167,28 +240,45 @@ function trivialBot(
     return makeTargets(getMoveById('yun')!, bot, others);
   }
 
-  const rootState: MCTSState = {
-    myEnergy: bot.energy,
-    oppEnergy: opp.energy,
-    myLevel: bot.level,
-    oppLevel: opp.level,
-    round: 1,
-  };
+  // Filter useless moves before MCTS (same logic as normal bot)
+  const oppCanAttack = oppAvailable.some(m => m.atk > 0);
+  let candidates = oppCanAttack ? affordable
+    : affordable.filter(m => !(m.def > 0 || m.type === 'special_defense'));
+  if (candidates.length === 0) candidates = [getMoveById('yun')!];
 
   // Run MCTS for each candidate move
   const scores: { move: MoveDef; score: number }[] = [];
 
-  for (const myMove of affordable) {
+  for (const myMove of candidates) {
+    // ---- 1-ply opponent model: pre-evaluate every opponent move against myMove ----
+    // Replaces static baseScore with actual exchange outcomes.
+    const oppEval = oppAvailable.map(oppMove => {
+      const o = evalExchange(myMove, oppMove, bot, opp);
+      if (o.myDeath) return { move: oppMove, weight: 2000 };      // opponent loves killing us
+      if (o.oppDeath) return { move: oppMove, weight: -2000 };    // opponent avoids dying
+      const s = mctsEvalState({
+        myEnergy: bot.energy - myMove.cost + o.myEnergyDelta,
+        oppEnergy: opp.energy - oppMove.cost + o.oppEnergyDelta,
+        myLevel: bot.level, oppLevel: opp.level, round: 1,
+      });
+      return { move: oppMove, weight: s + 1000 };  // shift to positive, higher = better for opp
+    });
+
+    // Pre-compute softmax denominators for opponent picking
+    const maxW = Math.max(...oppEval.map(e => e.weight));
+    const oppExps = oppEval.map(e => Math.exp((e.weight - maxW) / 0.8)); // temp 0.8 = moderately selective
+    const oppTotal = oppExps.reduce((a, b) => a + b, 0);
+
     let totalScore = 0;
     for (let sim = 0; sim < MCTS_SIMULATIONS; sim++) {
-      // Opponent: weighted random from top-scored moves
-      const oppScored = oppAvailable
-        .slice(0, 8)
-        .map(m => ({ move: m, s: baseScore(m, opp, bot) + Math.random() * 8 }))
-        .sort((a, b) => b.s - a.s);
-      const oppMove = oppScored.length <= 2
-        ? oppScored[0].move
-        : randPick(oppScored.slice(0, 3).map(x => x.move));
+      // Softmax-weighted opponent pick
+      let r = Math.random() * oppTotal;
+      let pickedIdx = oppEval.length - 1;
+      for (let i = 0; i < oppExps.length; i++) {
+        r -= oppExps[i];
+        if (r <= 0) { pickedIdx = i; break; }
+      }
+      const oppMove = oppEval[pickedIdx].move;
 
       const outcome = evalExchange(myMove, oppMove, bot, opp);
 
@@ -212,7 +302,9 @@ function trivialBot(
   }
 
   scores.sort((a, b) => b.score - a.score);
-  return makeTargets(scores[0].move, bot, others);
+
+  // Softmax: keeps preference for good moves but stays unpredictable
+  return makeTargets(softmaxPick(scores, mctsTemperature(bot.level)), bot, others);
 }
 
 // ================================================================
