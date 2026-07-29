@@ -2,6 +2,8 @@ import { PlayerState, BotLevel, MoveDef } from '../../../shared/types';
 import { getMovesByLevel, getMoveById } from '../data/moves';
 
 // ---- Types ----
+export type TrivialPersonality = 'charger' | 'balanced' | 'aggressive';
+
 export interface BotMemory {
   consecutiveDefenses: number;
   opponentHistory: Map<string, string[]>;
@@ -9,6 +11,9 @@ export interface BotMemory {
   baseStrategy: StrategyProfile;   // original strategy at creation
   isTrickster: boolean;            // 诡诈 modifier
   roundsSinceAdapt: number;        // rounds since last strategy check
+  trivialPersonality?: TrivialPersonality;  // MCTS bot personality (picked at game start)
+  trivialPersonalitySetAt?: number;         // round when personality was last set
+  trivialPatience?: number;                 // rounds before stalemate switch (per-bot jitter)
 }
 
 // ---- Utils ----
@@ -118,11 +123,12 @@ function mctsEvalState(state: MCTSState): number {
 }
 
 // ---- Smart rollout picker ----
-// Biases rollout toward human-like play: defend when threatened, attack the exposed,
-// charge otherwise. This lets MCTS discover multi-round plans (charge→charge→挂机).
+// Personality-driven biases. Each personality shifts the defend/attack/charge balance,
+// making trivial unpredictable across games while internally consistent within a game.
 function mctsSmartPick(
   myMoves: MoveDef[], oppMoves: MoveDef[],
-  player: PlayerState, opponent: PlayerState
+  player: PlayerState, opponent: PlayerState,
+  personality: TrivialPersonality
 ): MoveDef {
   if (myMoves.length === 0) return getMoveById('yun')!;
 
@@ -137,47 +143,49 @@ function mctsSmartPick(
   const oppDefRate = oppMoves.length > 0
     ? oppMoves.filter(m => m.def > 0 || m.type === 'special_defense').length / oppMoves.length : 0;
 
-  // Priority 1: Opponent threat high → defend
-  if (oppAtkRate > 0.25 && defenses.length > 0 && Math.random() < 0.65) {
+  // Personality-dependent probabilities
+  const pDefend  = personality === 'aggressive' ? 0.30 : personality === 'charger' ? 0.40 : 0.65;
+  const pAttack  = personality === 'aggressive' ? 0.80 : personality === 'charger' ? 0.30 : 0.55;
+  const pCharge  = personality === 'aggressive' ? 0.50 : personality === 'charger' ? 0.95 : 0.80;
+  const chargeBias = personality === 'aggressive' ? 5 : personality === 'charger' ? 35 : 20;
+
+  // Priority 1: Opponent threat high → defend (personality modulates probability)
+  if (oppAtkRate > 0.25 && defenses.length > 0 && Math.random() < pDefend) {
     defenses.sort((a, b) => b.def - a.def);
     return defenses[0];
   }
 
   // Priority 2: Opponent vulnerable → attack (but avoid losing mutual attacks)
-  if (attacks.length > 0 && oppDefRate < 0.5 && Math.random() < 0.55) {
+  if (attacks.length > 0 && oppDefRate < 0.5 && Math.random() < pAttack) {
     const oppMaxAtk = Math.max(...oppMoves.filter(m => m.atk > 0).map(m => m.atk), 0);
     const myBestAtk = Math.max(...attacks.map(m => m.atk), 0);
-    // Skip attacking if opponent has a much stronger attack (diff≥9 = we die in mutual)
     const attackIsSafe = oppAtkRate < 0.2 || myBestAtk >= oppMaxAtk || (oppMaxAtk - myBestAtk) < 9;
     if (attackIsSafe) {
       attacks.sort((a, b) => (b.atk / Math.max(b.cost, 0.01)) - (a.atk / Math.max(a.cost, 0.01)));
       return randPick(attacks.slice(0, 2));
     }
-    // Otherwise fall through to charge/defend
   }
 
   // Priority 2.5: Can't break baseline defense (防=30) → charge for a bigger attack
-  // Uses 30 as threshold because 防 is the universal defense everyone uses;
-  // 超防(50) costs energy and is situational — having 50+ ATK still kills through 防.
   if (attacks.length > 0 && oppDefRate > 0.2) {
-    const BREAK_THRESHOLD = 30; // 防 is the baseline defense
+    const BREAK_THRESHOLD = 30;
     const canBreak = attacks.some(m => m.atk > BREAK_THRESHOLD);
     if (!canBreak) {
       const allMyMoves = getMovesByLevel(player.level);
       const needEnergy = allMyMoves
         .filter(m => m.atk > BREAK_THRESHOLD && m.cost > player.energy && m.cost <= player.energy + 2)
         .sort((a, b) => a.cost - b.cost);
-      if (needEnergy.length > 0 && Math.random() < 0.8) {
+      if (needEnergy.length > 0 && Math.random() < pCharge) {
         const charges = myMoves.filter(m => m.type === 'charge');
         if (charges.length > 0) return randPick(charges);
       }
     }
   }
 
-  // Priority 3: baseScore-weighted, strongly biased toward charging
+  // Priority 3: baseScore-weighted with personality charge bias
   const scored = myMoves.map(m => {
     let s = baseScore(m, player, opponent);
-    if (m.type === 'charge') s += 20; // heavy bias: charge to reach game-breaking attacks
+    if (m.type === 'charge') s += chargeBias;
     s += noise(5);
     return { move: m, score: s };
   });
@@ -186,18 +194,19 @@ function mctsSmartPick(
 }
 
 // ---- MCTS rollout (smart for self, baseScore-weighted for opponent) ----
-function mctsSimulate(state: MCTSState, botLevel: number, oppLevel: number, depth: number): number {
-  if (depth >= 12) return -200; // stalemate penalty: path led nowhere (increased from -30)
+function mctsSimulate(state: MCTSState, botLevel: number, oppLevel: number, depth: number, personality: TrivialPersonality): number {
+  if (depth >= 12) return -200;
 
   const myMoves = getMovesByLevel(botLevel).filter(m => state.myEnergy >= m.cost);
   const oppMoves = getMovesByLevel(oppLevel).filter(m => state.oppEnergy >= m.cost);
   if (myMoves.length === 0 && oppMoves.length === 0) return mctsEvalState(state);
 
-  // Self: smart pick (attacks when safe, defends when threatened, charges otherwise)
+  // Self: personality-driven smart pick
   const myMove = myMoves.length > 0
     ? mctsSmartPick(myMoves, oppMoves,
         { energy: state.myEnergy, level: botLevel } as any,
-        { energy: state.oppEnergy, level: oppLevel } as any)
+        { energy: state.oppEnergy, level: oppLevel } as any,
+        personality)
     : getMoveById('yun')!;
 
   // Opponent: baseScore-weighted random (we model them as "reasonable but not smart")
@@ -226,7 +235,7 @@ function mctsSimulate(state: MCTSState, botLevel: number, oppLevel: number, dept
     myLevel: botLevel,
     oppLevel: oppLevel,
     round: state.round + 1,
-  }, botLevel, oppLevel, depth + 1);
+  }, botLevel, oppLevel, depth + 1, personality);
 }
 
 // ---- Softmax: prefer good moves but stay unpredictable ----
@@ -245,10 +254,28 @@ function softmaxPick(scores: { move: MoveDef; score: number }[], temperature: nu
 
 function trivialBot(
   bot: PlayerState, available: MoveDef[], others: PlayerState[],
-  _round: number, _memory: BotMemory
+  round: number, memory: BotMemory
 ): { moveId: string; targets: string[] } {
   const affordable = available.filter(m => bot.energy >= m.cost);
   if (affordable.length === 0) return { moveId: 'yun', targets: [] };
+
+  // ---- Personality: random at game start (3:4:3), switched on stalemate ----
+  if (!memory.trivialPersonality) {
+    const r = Math.random();
+    memory.trivialPersonality = r < 0.3 ? 'charger' : r < 0.7 ? 'balanced' : 'aggressive';
+    memory.trivialPersonalitySetAt = round;
+    memory.trivialPatience = 8 + Math.floor(Math.random() * 7); // 8-14 rounds, per-bot
+  }
+  // Stalemate switch: after patience rounds with no resolution, change personality.
+  // Different bots have different patience → breaks synchronization.
+  if (round - (memory.trivialPersonalitySetAt ?? 1) >= (memory.trivialPatience ?? 10)) {
+    const others: TrivialPersonality[] = ['charger', 'balanced', 'aggressive']
+      .filter(p => p !== memory.trivialPersonality) as TrivialPersonality[];
+    memory.trivialPersonality = randPick(others);
+    memory.trivialPersonalitySetAt = round;
+    memory.trivialPatience = 8 + Math.floor(Math.random() * 7); // new patience for new personality
+  }
+  const personality = memory.trivialPersonality;
 
   const opp = others[0];
   const oppAvailable = getMovesByLevel(opp.level).filter(m => opp.energy >= m.cost);
@@ -313,7 +340,7 @@ function trivialBot(
           round: 2,
         };
         totalScore += mctsEvalState(nextState)
-          + mctsSimulate(nextState, bot.level, opp.level, 2) * 0.5;
+          + mctsSimulate(nextState, bot.level, opp.level, 2, personality) * 0.5;
       }
     }
     scores.push({ move: myMove, score: totalScore / MCTS_SIMULATIONS });
