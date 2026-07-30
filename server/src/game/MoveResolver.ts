@@ -70,12 +70,9 @@ export function resolveAttacks(
         continue;
       }
 
-      // Target is in attack stance if they're using ANY attack (not just one targeting us).
-      // In 3+ player games this prevents all-hit attacks (冰箭) from insta-killing players
-      // who are attacking a third party — they fight back with their ATK.
-      const targetIsAttacking = targetMove && targetMove.atk > 0 &&
-        !deaths.includes(pa.attackerId);
-      const targetIsAttackingBack = targetIsAttacking &&
+      // Target is attacking if they're using any ATK move (locked in at submission time).
+      // The attacker's death during resolution doesn't retroactively remove the target's attack stance.
+      const targetIsAttackingBack = targetMove && targetMove.atk > 0 &&
         targetSub!.targets.includes(pa.attackerId);
       const targetIsDefending = targetMove && targetMove.def > 0;
       const targetIsLongdun = targetMove?.specialEffect === 'longdun_block';
@@ -87,8 +84,8 @@ export function resolveAttacks(
       const atkMoveName = getMoveById(pa.moveId)?.name || '?';
       const defMoveName = targetMove?.name || '?';
 
-      // CASE 1: Mutual attack — target is using any attack (not just targeting us)
-      if (targetIsAttacking) {
+      // CASE 1: Mutual attack — both targeting each other with attacks
+      if (targetIsAttackingBack) {
         const targetAtk = targetMove!.atk;
         const diff = Math.abs(pa.attackerAtk - targetAtk);
         if (diff < 9) {
