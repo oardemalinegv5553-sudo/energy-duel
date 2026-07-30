@@ -97,6 +97,14 @@ export function resolveAttacks(
             `${N(pa.attackerId)} 的「${atkMoveName}」(${pa.attackerAtk}攻) 不敌 ${N(targetId)} 的「${defMoveName}」(${targetAtk}攻)，对攻败北`;
           landing = false;
           description = `对攻败北，${N(pa.attackerId)} 死亡`;
+          // Record the victor's landing attack so fair mode kill tracking works
+          // even when the victor's own attack is skipped (target already in aliveMap).
+          attacks.push({
+            attacker: targetId, target: pa.attackerId,
+            atk: targetAtk, def: pa.attackerAtk,
+            landing: true,
+            description: `对攻胜出，${N(pa.attackerId)} 死亡`,
+          });
         } else {
           deaths.push(targetId);
           deathDetails[targetId] =
