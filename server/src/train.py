@@ -17,8 +17,6 @@ import gymnasium as gym
 from gymnasium import spaces
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
-from stable_baselines3.common.callbacks import EvalCallback
-
 # ================================================================
 # Game Engine (Lv.1–5 moves for now)
 # ================================================================
@@ -262,17 +260,6 @@ def main():
 
     # Create vectorized environment
     env = DummyVecEnv([make_env for _ in range(4)])
-    eval_env = DummyVecEnv([make_env])
-
-    # Eval callback: every 50k steps, run 20 games to measure progress
-    eval_callback = EvalCallback(
-        eval_env,
-        best_model_save_path='./logs/',
-        log_path='./logs/',
-        eval_freq=50_000,
-        n_eval_episodes=20,
-        deterministic=True,
-    )
 
     # PPO model
     model = PPO(
@@ -287,10 +274,9 @@ def main():
         clip_range=0.2,
         ent_coef=0.01,  # encourage exploration (counter turtle)
         verbose=1,
-        tensorboard_log='./logs/',
     )
 
-    model.learn(total_timesteps=args.steps, callback=eval_callback)
+    model.learn(total_timesteps=args.steps)
     model.save('energy_duel_model')
     print('Model saved: energy_duel_model.zip')
 
