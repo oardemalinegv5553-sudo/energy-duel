@@ -280,26 +280,15 @@ def main():
     model.save('energy_duel_model')
     print('Model saved: energy_duel_model.zip')
 
-    # Export to ONNX (manual PyTorch export)
-    import torch
-    import onnxruntime as ort
-    model.policy.eval()
-    dummy = torch.zeros(1, 7)
-    torch.onnx.export(
-        model.policy,
-        dummy,
-        'energy_duel_model.onnx',
-        input_names=['observation'],
-        output_names=['action_probs'],
-        dynamic_axes={'observation': {0: 'batch'}},
-        opset_version=11,
-    )
-    print('ONNX model exported: energy_duel_model.onnx')
-
-    # Quick verify
-    session = ort.InferenceSession('energy_duel_model.onnx')
-    test_out = session.run(None, {'observation': np.zeros((1, 7), dtype=np.float32)})
-    print(f'ONNX verification OK, output count: {len(test_out)}')
+    # ONNX export: install onnxscript first if needed
+    #   pip3 install onnxscript onnxruntime
+    # Then uncomment the block below
+    # import torch, onnxruntime as ort
+    # model.policy.eval()
+    # torch.onnx.export(model.policy, torch.zeros(1, 7),
+    #     'energy_duel_model.onnx',
+    #     input_names=['observation'], output_names=['action_probs'],
+    #     dynamic_axes={'observation': {0: 'batch'}}, opset_version=11)
 
 
 if __name__ == '__main__':
