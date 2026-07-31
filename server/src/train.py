@@ -117,7 +117,7 @@ def eval_exchange(my_move_id, opp_move_id):
 # Normal Bot — minimax with checkmate detection (Python port)
 # ================================================================
 
-RECURSE_DEPTH = 4       # reduced vs TS (faster training, Python slower)
+RECURSE_DEPTH = 2       # Python minimax is slow; depth=2 ~9x faster than depth=4
 CANDIDATE_COUNT = 5
 
 def base_score(move, player, opponent):
@@ -383,7 +383,7 @@ def make_env():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--steps', type=int, default=2_000_000, help='Total timesteps')
+    parser.add_argument('--steps', type=int, default=500_000, help='Total timesteps')
     parser.add_argument('--eval', action='store_true', help='Evaluate only')
     args = parser.parse_args()
 
