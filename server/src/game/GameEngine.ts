@@ -277,15 +277,17 @@ export class GameEngine {
       }
     }
 
-    // Record opponent moves for bots (learning)
+    // Record opponent moves for bots (learning + real-time profiling)
     for (const p of room.getAllPlayers()) {
       if (p.isBot) {
         const mem = room.botMemories.get(p.id);
         if (mem) {
           for (const other of room.getAllPlayers()) {
-            if (!other.isBot && other.alive) {
-              const sub = room.pendingMoves.get(other.id);
-              if (sub) recordOpponentMove(mem, other.id, sub.moveId);
+            if (other.id === p.id) continue;
+            const sub = room.pendingMoves.get(other.id);
+            if (sub) {
+              const def = getMoveById(sub.moveId);
+              recordOpponentMove(mem, other.id, sub.moveId, def);
             }
           }
         }

@@ -14,6 +14,9 @@ export interface BotMemory {
   trivialPersonality?: TrivialPersonality;  // MCTS bot personality (picked at game start)
   trivialPersonalitySetAt?: number;         // round when personality was last set
   trivialPatience?: number;                 // rounds before stalemate switch (per-bot jitter)
+  // Real-time opponent profiling (§A)
+  opponentMoves: Map<string, string[]>;     // playerId → recent moveIds (last 8)
+  globalConservative: boolean;              // last 2 rounds had zero attacks globally
 }
 
 // ---- Utils ----
@@ -86,6 +89,8 @@ export function createBotMemory(): BotMemory {
     baseStrategy: { ...base },
     isTrickster,
     roundsSinceAdapt: 0,
+    opponentMoves: new Map(),
+    globalConservative: false,
   };
 }
 
@@ -128,7 +133,7 @@ function mctsEvalState(state: MCTSState): number {
 function mctsSmartPick(
   myMoves: MoveDef[], oppMoves: MoveDef[],
   player: PlayerState, opponent: PlayerState,
-  personality: TrivialPersonality
+  personality: TrivialPersonality, conservative: boolean
 ): MoveDef {
   if (myMoves.length === 0) return getMoveById('yun')!;
 
@@ -147,7 +152,8 @@ function mctsSmartPick(
   const pDefend  = personality === 'aggressive' ? 0.30 : personality === 'charger' ? 0.40 : 0.65;
   const pAttack  = personality === 'aggressive' ? 0.80 : personality === 'charger' ? 0.30 : 0.55;
   const pCharge  = personality === 'aggressive' ? 0.50 : personality === 'charger' ? 0.95 : 0.80;
-  const chargeBias = personality === 'aggressive' ? 5 : personality === 'charger' ? 35 : 20;
+  let chargeBias = personality === 'aggressive' ? 5 : personality === 'charger' ? 35 : 20;
+  if (conservative) chargeBias = Math.floor(chargeBias * 1.5); // global stalemate → charge harder
 
   // Priority 1: Opponent threat high → defend (personality modulates probability)
   if (oppAtkRate > 0.25 && defenses.length > 0 && Math.random() < pDefend) {
@@ -194,7 +200,7 @@ function mctsSmartPick(
 }
 
 // ---- MCTS rollout (smart for self, baseScore-weighted for opponent) ----
-function mctsSimulate(state: MCTSState, botLevel: number, oppLevel: number, depth: number, personality: TrivialPersonality): number {
+function mctsSimulate(state: MCTSState, botLevel: number, oppLevel: number, depth: number, personality: TrivialPersonality, conservative: boolean): number {
   if (depth >= 12) return -200;
 
   const myMoves = getMovesByLevel(botLevel).filter(m => state.myEnergy >= m.cost);
@@ -206,7 +212,7 @@ function mctsSimulate(state: MCTSState, botLevel: number, oppLevel: number, dept
     ? mctsSmartPick(myMoves, oppMoves,
         { energy: state.myEnergy, level: botLevel } as any,
         { energy: state.oppEnergy, level: oppLevel } as any,
-        personality)
+        personality, conservative)
     : getMoveById('yun')!;
 
   // Opponent: baseScore-weighted random (we model them as "reasonable but not smart")
@@ -235,7 +241,7 @@ function mctsSimulate(state: MCTSState, botLevel: number, oppLevel: number, dept
     myLevel: botLevel,
     oppLevel: oppLevel,
     round: state.round + 1,
-  }, botLevel, oppLevel, depth + 1, personality);
+  }, botLevel, oppLevel, depth + 1, personality, conservative);
 }
 
 // ---- Softmax: prefer good moves but stay unpredictable ----
@@ -276,6 +282,7 @@ function trivialBot(
     memory.trivialPatience = 8 + Math.floor(Math.random() * 7); // new patience for new personality
   }
   const personality = memory.trivialPersonality;
+  const conservative = memory.globalConservative;
 
   // ---- Smart opponent selection for multi-player ----
   // In 3+ player games, pick the RIGHT opponent instead of blindly using others[0].
@@ -308,7 +315,15 @@ function trivialBot(
   const scores: { move: MoveDef; score: number }[] = [];
 
   for (const myMove of candidates) {
-    // ---- 1-ply opponent model: pre-evaluate every opponent move against myMove ----
+    // ---- 1-ply opponent model: evalExchange + frequency bias ----
+    // Get opponent's move history for frequency weighting
+    const oppHist = memory.opponentMoves.get(opp.id) || [];
+    const totalMoves = oppHist.length || 1;
+    const oppFreq: Record<string, number> = {};
+    for (const mid of oppHist) {
+      oppFreq[mid] = (oppFreq[mid] || 0) + 1;
+    }
+
     const oppEval = oppAvailable.map(oppMove => {
       const o = evalExchange(myMove, oppMove, bot, opp);
       if (o.myDeath) return { move: oppMove, weight: 2000 };
@@ -318,7 +333,9 @@ function trivialBot(
         oppEnergy: opp.energy - oppMove.cost + o.oppEnergyDelta,
         myLevel: bot.level, oppLevel: opp.level, round: 1,
       });
-      return { move: oppMove, weight: s + 1000 };
+      // Frequency bias: Laplace-smoothed. Moves the opponent actually uses get higher weight.
+      const freqBias = ((oppFreq[oppMove.id] || 0) / totalMoves + 0.2) / 1.2;
+      return { move: oppMove, weight: (s + 1000) * freqBias };
     });
 
     const maxW = Math.max(...oppEval.map(e => e.weight));
@@ -350,7 +367,7 @@ function trivialBot(
           round: 2,
         };
         totalScore += mctsEvalState(nextState)
-          + mctsSimulate(nextState, bot.level, opp.level, 2, personality) * 0.5;
+          + mctsSimulate(nextState, bot.level, opp.level, 2, personality, conservative) * 0.5;
       }
     }
     scores.push({ move: myMove, score: totalScore / MCTS_SIMULATIONS });
@@ -881,13 +898,34 @@ function pickPrimaryTarget(_bot: PlayerState, others: PlayerState[], _memory: Bo
 // History recording
 // ================================================================
 
-export function recordOpponentMove(memory: BotMemory, opponentId: string, moveId: string): void {
+export function recordOpponentMove(memory: BotMemory, opponentId: string, moveId: string, moveDef?: MoveDef): void {
+  // Legacy history (used by easy bot adaptation)
   if (!memory.opponentHistory.has(opponentId)) {
     memory.opponentHistory.set(opponentId, []);
   }
   const hist = memory.opponentHistory.get(opponentId)!;
   hist.push(moveId);
   if (hist.length > 5) hist.shift();
+
+  // Real-time profiling: track all opponents for frequency analysis
+  if (!memory.opponentMoves.has(opponentId)) {
+    memory.opponentMoves.set(opponentId, []);
+  }
+  const prof = memory.opponentMoves.get(opponentId)!;
+  prof.push(moveId);
+  if (prof.length > 8) prof.shift();
+
+  // Update global conservative flag: check last 2 rounds of ALL tracked opponents
+  let anyAttack = false;
+  for (const moves of memory.opponentMoves.values()) {
+    const recent = moves.slice(-2);
+    for (const mid of recent) {
+      const m = moveDef || getMoveById(mid);
+      if (m && m.atk > 0) { anyAttack = true; break; }
+    }
+    if (anyAttack) break;
+  }
+  memory.globalConservative = !anyAttack && memory.opponentMoves.size > 0;
 }
 
 // ================================================================
