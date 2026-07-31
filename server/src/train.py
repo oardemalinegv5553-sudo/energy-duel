@@ -385,6 +385,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--steps', type=int, default=500_000, help='Total timesteps')
     parser.add_argument('--eval', action='store_true', help='Evaluate only')
+    parser.add_argument('--export', action='store_true', help='Export existing model to ONNX')
     args = parser.parse_args()
 
     if args.eval:
@@ -393,6 +394,10 @@ def main():
         model = PPO.load('energy_duel_model')
         mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=100)
         print(f'Mean reward: {mean_reward:.2f} ± {std_reward:.2f}')
+        return
+
+    if args.export:
+        export_onnx()
         return
 
     print(f'Training PPO for {args.steps:,} steps...')
@@ -426,15 +431,58 @@ def main():
     model.save('energy_duel_model')
     print('Model saved: energy_duel_model.zip')
 
-    # ONNX export: install onnxscript first if needed
-    #   pip3 install onnxscript onnxruntime
-    # Then uncomment the block below
-    # import torch, onnxruntime as ort
-    # model.policy.eval()
-    # torch.onnx.export(model.policy, torch.zeros(1, 7),
-    #     'energy_duel_model.onnx',
-    #     input_names=['observation'], output_names=['action_probs'],
-    #     dynamic_axes={'observation': {0: 'batch'}}, opset_version=11)
+
+def export_onnx():
+    """Export the trained PPO model to ONNX for Node.js inference.
+
+    Exports only the feature extractor + action net (policy head),
+    outputting raw logits for all actions. Node.js applies softmax + temperature.
+    """
+    import torch
+    import onnxruntime as ort
+
+    model = PPO.load('energy_duel_model')
+    policy = model.policy
+    policy.eval()
+
+    # Build a wrapper module: obs → extract_features → action_net → logits
+    class PolicyNet(torch.nn.Module):
+        def __init__(self, p):
+            super().__init__()
+            self.features = p.features_extractor
+            self.action_net = p.action_net
+        def forward(self, obs):
+            feat = self.features(obs)
+            logits = self.action_net(feat)
+            return logits
+
+    wrapper = PolicyNet(policy)
+
+    torch.onnx.export(
+        wrapper,
+        torch.zeros(1, 7),
+        'energy_duel_model.onnx',
+        input_names=['observation'],
+        output_names=['action_logits'],
+        dynamic_axes={'observation': {0: 'batch'}},
+        opset_version=11,
+    )
+    print('ONNX model exported: energy_duel_model.onnx')
+
+    # Verify: logits shape should be [1, num_actions]
+    session = ort.InferenceSession('energy_duel_model.onnx')
+    out = session.run(None, {'observation': np.zeros((1, 7), dtype=np.float32)})
+    logits = out[0]
+    print(f'Verification OK, logits shape: {logits.shape}')
+    print(f'Sample logits: {logits[0][:5]}...')
+
+    # Save action index → move ID mapping for Node.js
+    moves = get_moves(5)  # must match env level used in training
+    mapping = {str(i): {'moveId': m[0], 'cost': m[3]} for i, m in enumerate(moves)}
+    import json
+    with open('energy_duel_action_map.json', 'w') as f:
+        json.dump(mapping, f)
+    print(f'Action map saved: energy_duel_action_map.json ({len(mapping)} actions)')
 
 
 if __name__ == '__main__':
