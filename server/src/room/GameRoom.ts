@@ -143,6 +143,7 @@ export class GameRoom {
       p.energy = 0;
       p.buffs = [];
       p.spectator = false;  // spectators become normal players
+      p.cumulativeProgress = {};  // reset cumulative triggers for new game
     }
     this.shatteredSkills.clear();
     this.cumulativeCounters = {};

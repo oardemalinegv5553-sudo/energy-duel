@@ -32,6 +32,7 @@ export class GameEngine {
       roomType: room.roomType,
       eliminationOrder: room.eliminationOrder,
       deadline: room.thinkingDeadline || undefined,
+      shatteredSkills: [...room.shatteredSkills],
     };
   }
 
@@ -85,6 +86,7 @@ export class GameEngine {
       roomType: room.roomType,
       eliminationOrder: room.eliminationOrder,
       deadline: room.thinkingDeadline,
+      shatteredSkills: [...room.shatteredSkills],
     };
 
     this.io.to(room.roomCode).emit('phase_change', { phase: 'thinking', state });
@@ -311,6 +313,7 @@ export class GameEngine {
       roomCode: room.roomCode,
       roomType: room.roomType,
       eliminationOrder: room.eliminationOrder,
+      shatteredSkills: [...room.shatteredSkills],
     };
 
     this.io.to(room.roomCode).emit('phase_change', { phase: 'result', state, resolution });
@@ -463,6 +466,7 @@ export class GameEngine {
       roomCode: room.roomCode,
       roomType: room.roomType,
       eliminationOrder: room.eliminationOrder,
+      shatteredSkills: [...room.shatteredSkills],
     };
 
     this.io.to(room.roomCode).emit('game_over', {

@@ -16,10 +16,11 @@ interface Props {
   roomCode: string;
   socket: Socket<ServerToClientEvents, ClientToServerEvents>;
   uiMode: 'normal' | 'compact';
+  shatteredSkills: string[];
 }
 
 export default function GameScreen({
-  phase, round, players, playerId, deadline, resolution, roomCode, socket, uiMode,
+  phase, round, players, playerId, deadline, resolution, roomCode, socket, uiMode, shatteredSkills,
 }: Props) {
   const me = players.find(p => p.id === playerId);
   const isDead = me ? !me.alive : true;
@@ -48,6 +49,7 @@ export default function GameScreen({
             socket={socket}
             deadline={deadline}
             uiMode={uiMode}
+            shatteredSkills={shatteredSkills}
           />
         )}
 

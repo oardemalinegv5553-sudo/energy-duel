@@ -11,6 +11,7 @@ interface Props {
   socket: Socket<ServerToClientEvents, ClientToServerEvents>;
   deadline: number;
   uiMode: 'normal' | 'compact';
+  shatteredSkills: string[];
 }
 
 function formatCost(c: number): string {
@@ -20,7 +21,7 @@ function formatCost(c: number): string {
   return String(c);
 }
 
-export default function MoveSelector({ players, playerId, level, energy, socket, deadline, uiMode }: Props) {
+export default function MoveSelector({ players, playerId, level, energy, socket, deadline, uiMode, shatteredSkills }: Props) {
   const [selectedMove, setSelectedMove] = useState<ClientMoveDef | null>(null);
   const [targets, setTargets] = useState<string[]>([]);
   const [submitted, setSubmitted] = useState(false);
@@ -52,7 +53,7 @@ export default function MoveSelector({ players, playerId, level, energy, socket,
   };
 
   const isMoveDisabled = (move: ClientMoveDef): boolean => {
-    return !canAfford(move) || !canUseCumulative(move);
+    return !canAfford(move) || !canUseCumulative(move) || shatteredSkills.includes(move.id);
   };
 
   const myTeam = players.find(p => p.id === playerId)?.team;
