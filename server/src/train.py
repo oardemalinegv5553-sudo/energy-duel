@@ -280,34 +280,26 @@ def main():
     model.save('energy_duel_model')
     print('Model saved: energy_duel_model.zip')
 
-    # Export to ONNX
-    import onnx
+    # Export to ONNX (manual PyTorch export)
+    import torch
     import onnxruntime as ort
-    from stable_baselines3.common.onnx_utils import export_to_onnx
+    model.policy.eval()
+    dummy = torch.zeros(1, 7)
+    torch.onnx.export(
+        model.policy,
+        dummy,
+        'energy_duel_model.onnx',
+        input_names=['observation'],
+        output_names=['action_probs'],
+        dynamic_axes={'observation': {0: 'batch'}},
+        opset_version=11,
+    )
+    print('ONNX model exported: energy_duel_model.onnx')
 
-    # SB3 built-in ONNX export
-    dummy_obs = np.zeros((1, 7), dtype=np.float32)
-    try:
-        export_to_onnx(model.policy, dummy_obs, 'energy_duel_model.onnx')
-        print('ONNX model exported: energy_duel_model.onnx')
-    except Exception as e:
-        print(f'ONNX export via SB3 util failed: {e}')
-        # Manual export fallback
-        import torch
-        torch.onnx.export(
-            model.policy,
-            (torch.zeros(1, 7),),
-            'energy_duel_model.onnx',
-            input_names=['observation'],
-            output_names=['action_probs'],
-            dynamic_axes={'observation': {0: 'batch'}},
-        )
-        print('ONNX model exported (manual): energy_duel_model.onnx')
-
-    # Quick verify ONNX
+    # Quick verify
     session = ort.InferenceSession('energy_duel_model.onnx')
-    test_out = session.run(None, {'observation': dummy_obs})
-    print(f'ONNX verification OK, output shape: {test_out[0].shape}')
+    test_out = session.run(None, {'observation': np.zeros((1, 7), dtype=np.float32)})
+    print(f'ONNX verification OK, output count: {len(test_out)}')
 
 
 if __name__ == '__main__':
