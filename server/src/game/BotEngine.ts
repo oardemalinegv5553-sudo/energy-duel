@@ -395,7 +395,11 @@ function mlBot(
   round: number, memory: BotMemory,
 ): { moveId: string; targets: string[] } {
   const affordable = available.filter(m => bot.energy >= m.cost);
-  if (affordable.length === 0) return { moveId: 'yun', targets: [] };
+  // available is already filtered by level+shattered+cumulative; affordable adds energy
+  const legalIds = new Set(affordable.map(m => m.id));
+  if (affordable.length === 0 || !legalIds.has('yun')) {
+    return { moveId: 'yun', targets: [] };
+  }
 
   const opp = others[0];
   const temperature = 1.2;
@@ -415,14 +419,25 @@ function mlBot(
     }).length / oppHist.length;
   }
 
-  const choices = inferMove(
+  // Model was trained at Lv.5 with fixed action space. Filter to bot's actual legal moves.
+  const raw = inferMove(
     bot.energy, opp.energy, bot.level, opp.level, round,
     oppAtkFreq, oppDefFreq, temperature,
   );
 
-  if (!choices || choices.length === 0) {
+  if (!raw || raw.length === 0) {
     return { moveId: 'yun', targets: [] };
   }
+
+  // Only keep moves the bot can legally use (level + energy + shattered + cumulative)
+  let choices = raw.filter(c => legalIds.has(c.moveId));
+  if (choices.length === 0) {
+    return { moveId: 'yun', targets: [] };
+  }
+
+  // Re-normalize probabilities
+  const total = choices.reduce((a, b) => a + b.prob, 0);
+  for (const c of choices) c.prob /= total;
 
   // Weighted random pick by probability
   const r = Math.random();
