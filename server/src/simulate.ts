@@ -433,10 +433,143 @@ function runSession(config: SimConfig) {
 }
 
 // ================================================================
+// Multiplayer runner — N bots, one game, fixed level
+// ================================================================
+
+interface MultiConfig {
+  bot: BotLevel;
+  level: number;
+  players: number;
+  games: number;
+  verbose: boolean;
+}
+
+function parseMultiArgs(): MultiConfig {
+  const args = process.argv.slice(2);
+  const get = (key: string) => {
+    const i = args.indexOf(key);
+    return i >= 0 ? args[i + 1] : null;
+  };
+  const has = (key: string) => args.includes(key);
+  return {
+    bot: (get('--bot') || 'trivial') as BotLevel,
+    level: parseInt(get('--level') || '1', 10),
+    players: parseInt(get('--players') || '4', 10),
+    games: parseInt(get('--games') || '5', 10),
+    verbose: has('--verbose') || has('-v'),
+  };
+}
+
+function runMultiplayer(config: MultiConfig) {
+  console.log(`\n${'═'.repeat(62)}`);
+  console.log(`  多人混战  ${botName(config.bot)} ×${config.players}  Lv.${config.level}  ×${config.games}局`);
+  console.log(`${'═'.repeat(62)}`);
+
+  for (let g = 1; g <= config.games; g++) {
+    let gameOverData: any = null;
+    let lastResolution: RoundResolution | null = null;
+
+    const mockIo = {
+      to: (_room: string) => ({
+        emit: (event: string, data: any) => {
+          if (event === 'phase_change' && data.resolution) {
+            lastResolution = data.resolution as RoundResolution;
+          }
+          if (event === 'game_over') {
+            gameOverData = data;
+          }
+        },
+      }),
+    } as any;
+
+    const engine = new GameEngine(mockIo);
+    const room = new GameRoom('SIM', 'multi');
+    room.initialLevel = config.level;
+
+    const bots: ReturnType<typeof room.addBot>[] = [];
+    for (let i = 0; i < config.players; i++) {
+      const b = room.addBot(`${botName(config.bot)}${i + 1}`, config.bot);
+      b.level = config.level;
+      bots.push(b);
+    }
+
+    const startTime = Date.now();
+    engine.startGame(room);
+
+    // Advance game loop
+    while (room.phase !== 'finished' && room.round < MAX_ROUNDS) {
+      room.clearTimer();
+      const aliveAfter = room.getAlivePlayers();
+      const upgradeSlots = Math.floor(room.initialPlayerCount / 2);
+      if (aliveAfter.length <= upgradeSlots) {
+        engine.endGame(room);
+        break;
+      }
+      const res = lastResolution;
+      const hadDeaths = ((res as RoundResolution | null)?.deaths?.length ?? 0) > 0;
+      if (hadDeaths) {
+        for (const p of aliveAfter) p.energy = 0;
+      }
+      room.round++;
+      engine.startThinkingPhase(room);
+    }
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+    // Print game summary
+    if (gameOverData) {
+      const rankings = gameOverData.rankings;
+      const winner = rankings?.[0]?.nickname || '?';
+      console.log(`\n  ── 第 ${g} 局 ──  胜者: ${winner}  (${room.round}回合, ${elapsed}s)`);
+      if (rankings) {
+        for (const r of rankings) {
+          const stats = gameOverData.fairStats?.[r.playerId];
+          const kills = stats ? `  击杀:${stats.kills}` : '';
+          console.log(`    ${r.rank}. ${r.nickname}${kills}`);
+        }
+      }
+    } else {
+      const alive = room.getAlivePlayers();
+      console.log(`\n  ── 第 ${g} 局 ──  平局(超时${MAX_ROUNDS}回合)  存活: ${alive.map(p => p.nickname).join(', ')}  (${elapsed}s)`);
+    }
+
+    // Show final round details if verbose
+    const res = lastResolution as RoundResolution | null;
+    if (config.verbose && res && room.round > 0) {
+      console.log(`    终局出招:`);
+      const moves = res.moves;
+      for (const b of bots) {
+        const m = moves[b.id];
+        const p = room.players.get(b.id);
+        const e = p?.energy?.toFixed(1) || '0';
+        const dead = !p?.alive ? ' ✝' : '';
+        if (m) {
+          const mn = getMoveById(m.moveId)?.name || m.moveId;
+          console.log(`      ${b.nickname.padEnd(12)} ${mn.padEnd(8)} 气${e}${dead}`);
+        }
+      }
+      if (res.deaths.length > 0) {
+        for (const d of res.deaths) {
+          const detail = res.deathDetails[d];
+          if (detail) console.log(`      → ${detail}`);
+        }
+      }
+    }
+  }
+
+  console.log(`\n  完成 ${config.games} 局多人混战`);
+}
+
+// ================================================================
 // Main
 // ================================================================
 
 function main() {
+  if (process.argv.includes('--players')) {
+    runMultiplayer(parseMultiArgs());
+    return;
+  }
+
   const config = parseArgs();
 
   if (config === 'all') {

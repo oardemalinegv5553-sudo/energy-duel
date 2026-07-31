@@ -277,7 +277,20 @@ function trivialBot(
   }
   const personality = memory.trivialPersonality;
 
-  const opp = others[0];
+  // ---- Smart opponent selection for multi-player ----
+  // In 3+ player games, pick the RIGHT opponent instead of blindly using others[0].
+  // - If we can attack: focus on the most vulnerable (lowest energy) opponent
+  // - If we're threatened: focus on the most dangerous (highest energy/level) opponent
+  const canAttack = affordable.some(m => m.atk > 0);
+  const lowestEnergy = Math.min(...others.map(o => o.energy));
+  const highestEnergy = Math.max(...others.map(o => o.energy));
+  // Most vulnerable: lowest energy; most dangerous: highest energy or level
+  const vulnerable = others.filter(o => o.energy === lowestEnergy);
+  const dangerous = others.filter(o => o.energy === highestEnergy);
+  const opp = canAttack
+    ? randPick(vulnerable.length > 0 ? vulnerable : others)
+    : randPick(dangerous.length > 0 ? dangerous : others);
+
   const oppAvailable = getMovesByLevel(opp.level).filter(m => opp.energy >= m.cost);
   if (oppAvailable.length === 0) {
     const atks = affordable.filter(m => m.atk > 0);
@@ -296,27 +309,24 @@ function trivialBot(
 
   for (const myMove of candidates) {
     // ---- 1-ply opponent model: pre-evaluate every opponent move against myMove ----
-    // Replaces static baseScore with actual exchange outcomes.
     const oppEval = oppAvailable.map(oppMove => {
       const o = evalExchange(myMove, oppMove, bot, opp);
-      if (o.myDeath) return { move: oppMove, weight: 2000 };      // opponent loves killing us
-      if (o.oppDeath) return { move: oppMove, weight: -2000 };    // opponent avoids dying
+      if (o.myDeath) return { move: oppMove, weight: 2000 };
+      if (o.oppDeath) return { move: oppMove, weight: -2000 };
       const s = mctsEvalState({
         myEnergy: bot.energy - myMove.cost + o.myEnergyDelta,
         oppEnergy: opp.energy - oppMove.cost + o.oppEnergyDelta,
         myLevel: bot.level, oppLevel: opp.level, round: 1,
       });
-      return { move: oppMove, weight: s + 1000 };  // shift to positive, higher = better for opp
+      return { move: oppMove, weight: s + 1000 };
     });
 
-    // Pre-compute softmax denominators for opponent picking
     const maxW = Math.max(...oppEval.map(e => e.weight));
-    const oppExps = oppEval.map(e => Math.exp((e.weight - maxW) / 0.8)); // temp 0.8 = moderately selective
+    const oppExps = oppEval.map(e => Math.exp((e.weight - maxW) / 0.8));
     const oppTotal = oppExps.reduce((a, b) => a + b, 0);
 
     let totalScore = 0;
     for (let sim = 0; sim < MCTS_SIMULATIONS; sim++) {
-      // Softmax-weighted opponent pick
       let r = Math.random() * oppTotal;
       let pickedIdx = oppEval.length - 1;
       for (let i = 0; i < oppExps.length; i++) {
