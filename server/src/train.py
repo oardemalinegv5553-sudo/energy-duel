@@ -433,59 +433,37 @@ def main():
 
 
 def export_onnx():
-    """Export the trained PPO model to ONNX for Node.js inference.
+    """Export trained PPO weights as JSON for Node.js inference.
 
-    Exports only the feature extractor + action net (policy head),
-    outputting raw logits for all actions. Node.js applies softmax + temperature.
+    The policy network is: obs(7) → shared_net → latent(64) → action_net → logits(N).
+    We extract all Linear layer weights/biases as JSON arrays.
+    Node.js does: x = relu(W1·obs + b1); x = relu(W2·x + b2); logits = W3·x + b3; softmax(logits/T).
     """
+    import json
     import torch
-    import onnxruntime as ort
 
     model = PPO.load('energy_duel_model')
-    policy = model.policy
-    policy.eval()
+    state = model.policy.state_dict()
 
-    # Build a wrapper module: obs → extract_features → action_net → logits
-    class PolicyNet(torch.nn.Module):
-        def __init__(self, p):
-            super().__init__()
-            self.features = p.features_extractor
-            self.action_net = p.action_net
-        def forward(self, obs):
-            feat = self.features(obs)
-            logits = self.action_net(feat)
-            return logits
+    weights = {}
+    for k, v in state.items():
+        if hasattr(v, 'numpy'):
+            weights[k] = v.numpy().tolist()
 
-    wrapper = PolicyNet(policy)
-    wrapper.eval()
+    with open('energy_duel_model.json', 'w') as f:
+        json.dump(weights, f)
+    print(f'Weights exported: energy_duel_model.json ({len(weights)} tensors)')
+    for k, v in weights.items():
+        if isinstance(v, list):
+            shape = [len(v)] if not isinstance(v[0], list) else [len(v), len(v[0])] if v[0] and isinstance(v[0], list) else [len(v)]
+            print(f'  {k}: {shape}')
 
-    # dynamo=False → legacy TorchScript exporter, more forgiving with dynamic shapes
-    torch.onnx.export(
-        wrapper,
-        torch.zeros(1, 7),
-        'energy_duel_model.onnx',
-        input_names=['observation'],
-        output_names=['action_logits'],
-        dynamic_axes={'observation': {0: 'batch'}},
-        opset_version=11,
-        dynamo=False,
-    )
-    print('ONNX model exported: energy_duel_model.onnx')
-
-    # Verify: logits shape should be [1, num_actions]
-    session = ort.InferenceSession('energy_duel_model.onnx')
-    out = session.run(None, {'observation': np.zeros((1, 7), dtype=np.float32)})
-    logits = out[0]
-    print(f'Verification OK, logits shape: {logits.shape}')
-    print(f'Sample logits: {logits[0][:5]}...')
-
-    # Save action index → move ID mapping for Node.js
-    moves = get_moves(5)  # must match env level used in training
+    # Also save action mapping
+    moves = get_moves(5)
     mapping = {str(i): {'moveId': m[0], 'cost': m[3]} for i, m in enumerate(moves)}
-    import json
     with open('energy_duel_action_map.json', 'w') as f:
         json.dump(mapping, f)
-    print(f'Action map saved: energy_duel_action_map.json ({len(mapping)} actions)')
+    print(f'Action map: energy_duel_action_map.json ({len(mapping)} actions)')
 
 
 if __name__ == '__main__':
