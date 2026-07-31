@@ -117,7 +117,7 @@ def eval_exchange(my_move_id, opp_move_id):
 # Normal Bot — minimax with checkmate detection (Python port)
 # ================================================================
 
-RECURSE_DEPTH = 2       # Python minimax is slow; depth=2 ~9x faster than depth=4
+RECURSE_DEPTH = 3       # minimax depth (3 = balanced speed/quality for Python)
 CANDIDATE_COUNT = 5
 
 def base_score(move, player, opponent):
@@ -256,17 +256,19 @@ def normal_bot_move(my_energy, opp_energy, my_level, opp_level, rnd):
 # Gym Environment
 # ================================================================
 
-class EnergyDuelEnv(gym.Env):
-    """1v1 duel environment for RL training."""
+ALL_MOVES = get_moves(5)  # fixed 13-action space (Lv.5 max), model sees all
+NUM_ACTIONS = len(ALL_MOVES)
 
-    def __init__(self, max_rounds=60, level=5):
+class EnergyDuelEnv(gym.Env):
+    """1v1 duel with random level 1-5 per episode, fixed 13-action space."""
+
+    def __init__(self, max_rounds=60):
         super().__init__()
         self.max_rounds = max_rounds
-        self.level = level
-        self.moves = get_moves(level)
+        self.my_level = 5
+        self.opp_level = 5
 
-        # Action: pick one move (index into available moves at current state)
-        self.action_space = spaces.Discrete(len(self.moves))
+        self.action_space = spaces.Discrete(NUM_ACTIONS)
 
         # Observation: [my_energy, opp_energy, my_level, opp_level, round/max, opp_atk_freq, opp_def_freq]
         self.observation_space = spaces.Box(
@@ -300,10 +302,10 @@ class EnergyDuelEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        self.my_level = random.randint(1, 5)
+        self.opp_level = random.randint(1, 5)
         self.my_energy = 0.0
         self.opp_energy = 0.0
-        self.my_level = self.level
-        self.opp_level = self.level
         self.round = 0
         self.rounds_no_dmg = 0
         self.my_dead = False
@@ -312,11 +314,10 @@ class EnergyDuelEnv(gym.Env):
         return self._get_obs(), {}
 
     def step(self, action):
-        my_move = self.moves[action]
-        my_cost = my_move[3]
+        my_move = ALL_MOVES[action]
 
-        # Can't afford → forced 运 (action 0)
-        if self.my_energy < my_cost - 0.001:
+        # Illegal: above level or can't afford → forced 运
+        if my_move[2] > self.my_level or self.my_energy < my_move[3] - 0.001:
             my_move = get_move('yun')
 
         # Opponent: normal bot (minimax + checkmate + strategic filter)
@@ -379,11 +380,11 @@ class EnergyDuelEnv(gym.Env):
 # ================================================================
 
 def make_env():
-    return EnergyDuelEnv(max_rounds=60, level=5)
+    return EnergyDuelEnv(max_rounds=60)
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--steps', type=int, default=500_000, help='Total timesteps')
+    parser.add_argument('--steps', type=int, default=2_000_000, help='Total timesteps')
     parser.add_argument('--eval', action='store_true', help='Evaluate only')
     parser.add_argument('--export', action='store_true', help='Export existing model to ONNX')
     args = parser.parse_args()
@@ -459,8 +460,7 @@ def export_onnx():
             print(f'  {k}: {shape}')
 
     # Also save action mapping
-    moves = get_moves(5)
-    mapping = {str(i): {'moveId': m[0], 'cost': m[3]} for i, m in enumerate(moves)}
+    mapping = {str(i): {'moveId': m[0], 'cost': m[3]} for i, m in enumerate(ALL_MOVES)}
     with open('energy_duel_action_map.json', 'w') as f:
         json.dump(mapping, f)
     print(f'Action map: energy_duel_action_map.json ({len(mapping)} actions)')
