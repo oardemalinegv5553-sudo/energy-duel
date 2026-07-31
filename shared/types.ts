@@ -57,7 +57,7 @@ export interface RoomSummary {
 }
 
 // ---- Bot ----
-export type BotLevel = 'easy' | 'normal' | 'hard' | 'trivial';
+export type BotLevel = 'easy' | 'normal' | 'hard' | 'trivial' | 'ml';
 
 // ---- Player State ----
 export interface PlayerState {

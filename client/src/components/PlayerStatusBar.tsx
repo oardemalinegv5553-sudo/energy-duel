@@ -22,7 +22,7 @@ function PlayerRow({ p, playerId }: { p: PlayerInfo; playerId: string }) {
       className={`player-status ${p.id === playerId ? 'is-me' : ''} ${!p.alive && !p.spectator ? 'is-dead' : ''} ${p.spectator ? 'is-spectator' : ''}`}
     >
       <div className="ps-name">
-        {p.isBot && (p.botLevel === 'hard' ? '💀' : p.botLevel === 'easy' ? '🤖' : p.botLevel === 'trivial' ? '🎲' : '🧠')} {p.nickname}
+        {p.isBot && (p.botLevel === 'hard' ? '💀' : p.botLevel === 'easy' ? '🤖' : p.botLevel === 'trivial' ? '🎲' : p.botLevel === 'ml' ? '🧬' : '🧠')} {p.nickname}
         {p.id === playerId && ' (你)'}
         {p.spectator && <span className="spectator-tag">👁 观战</span>}
       </div>

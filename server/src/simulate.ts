@@ -187,6 +187,7 @@ function botName(level: BotLevel): string {
     easy: '简单人机',
     normal: '普通人机',
     hard: '困难人机',
+    ml: 'ML人机',
   };
   return map[level];
 }

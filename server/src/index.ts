@@ -5,6 +5,10 @@ import path from 'path';
 import fs from 'fs';
 import { createSocketServer } from './socket';
 import { AuthManager } from './auth/AuthManager';
+import { loadModel } from './mlInference';
+
+// Load ML model from server/ dir (non-fatal if missing)
+loadModel(path.resolve('server'));
 
 const app = express();
 const httpServer = createServer(app);

@@ -1,5 +1,6 @@
 import { PlayerState, BotLevel, MoveDef } from '../../../shared/types';
 import { getMovesByLevel, getMoveById } from '../data/moves';
+import { inferMove } from '../mlInference';
 
 // ---- Types ----
 export type TrivialPersonality = 'charger' | 'balanced' | 'aggressive';
@@ -386,6 +387,56 @@ function trivialBot(
 }
 
 // ================================================================
+// ML Bot — PPO-trained neural network inference
+// ================================================================
+
+function mlBot(
+  bot: PlayerState, available: MoveDef[], others: PlayerState[],
+  round: number, memory: BotMemory,
+): { moveId: string; targets: string[] } {
+  const affordable = available.filter(m => bot.energy >= m.cost);
+  if (affordable.length === 0) return { moveId: 'yun', targets: [] };
+
+  const opp = others[0];
+  const temperature = 1.2;
+
+  // Compute opponent frequency stats from memory
+  const oppHist = memory.opponentMoves.get(opp.id) || [];
+  let oppAtkFreq = 0.3;
+  let oppDefFreq = 0.2;
+  if (oppHist.length > 0) {
+    oppAtkFreq = oppHist.filter(mid => {
+      const m = getMoveById(mid);
+      return m && m.atk > 0;
+    }).length / oppHist.length;
+    oppDefFreq = oppHist.filter(mid => {
+      const m = getMoveById(mid);
+      return m && (m.def > 0 || m.type === 'special_defense');
+    }).length / oppHist.length;
+  }
+
+  const choices = inferMove(
+    bot.energy, opp.energy, bot.level, opp.level, round,
+    oppAtkFreq, oppDefFreq, temperature,
+  );
+
+  if (!choices || choices.length === 0) {
+    return { moveId: 'yun', targets: [] };
+  }
+
+  // Weighted random pick by probability
+  const r = Math.random();
+  let cumulative = 0;
+  for (const c of choices) {
+    cumulative += c.prob;
+    if (r <= cumulative) {
+      return makeTargets(getMoveById(c.moveId)!, bot, others);
+    }
+  }
+  return makeTargets(getMoveById(choices[0].moveId)!, bot, others);
+}
+
+// ================================================================
 
 export function chooseBotMove(
   level: BotLevel, bot: PlayerState, allPlayers: PlayerState[],
@@ -416,6 +467,11 @@ export function chooseBotMove(
   // === TRIVIAL BOT: MCTS ===
   if (level === 'trivial') {
     return trivialBot(bot, available, others, round, memory);
+  }
+
+  // === ML BOT: PPO-trained neural network ===
+  if (level === 'ml') {
+    return mlBot(bot, available, others, round, memory);
   }
 
   // === EASY BOT: complex strategy system (minimax + adaptation + stuck detection) ===
