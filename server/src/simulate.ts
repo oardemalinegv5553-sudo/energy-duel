@@ -505,8 +505,15 @@ function runMultiplayer(config: MultiConfig) {
       bots.push(b);
     }
 
+    // Collect per-round resolutions for verbose output
+    const allRounds: { round: number; res: RoundResolution }[] = [];
+
     const startTime = Date.now();
     engine.startGame(room);
+    // Capture first round's resolution
+    if (lastResolution) {
+      allRounds.push({ round: room.round, res: lastResolution as RoundResolution });
+    }
 
     // Advance game loop
     while (room.phase !== 'finished' && room.round < MAX_ROUNDS) {
@@ -517,13 +524,16 @@ function runMultiplayer(config: MultiConfig) {
         engine.endGame(room);
         break;
       }
-      const res = lastResolution;
-      const hadDeaths = ((res as RoundResolution | null)?.deaths?.length ?? 0) > 0;
+      const res = lastResolution as RoundResolution | null;
+      const hadDeaths = (res?.deaths?.length ?? 0) > 0;
       if (hadDeaths) {
         for (const p of aliveAfter) p.energy = 0;
       }
       room.round++;
       engine.startThinkingPhase(room);
+      if (lastResolution) {
+        allRounds.push({ round: room.round, res: lastResolution as RoundResolution });
+      }
     }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -545,25 +555,21 @@ function runMultiplayer(config: MultiConfig) {
       console.log(`\n  ── 第 ${g} 局 ──  平局(超时${MAX_ROUNDS}回合)  存活: ${alive.map(p => p.nickname).join(', ')}  (${elapsed}s)`);
     }
 
-    // Show final round details if verbose
-    const res = lastResolution as RoundResolution | null;
-    if (config.verbose && res && room.round > 0) {
-      console.log(`    终局出招:`);
-      const moves = res.moves;
-      for (const b of bots) {
-        const m = moves[b.id];
-        const p = room.players.get(b.id);
-        const e = p?.energy?.toFixed(1) || '0';
-        const dead = !p?.alive ? ' ✝' : '';
-        if (m) {
-          const mn = getMoveById(m.moveId)?.name || m.moveId;
-          console.log(`      ${b.nickname.padEnd(12)} ${mn.padEnd(8)} 气${e}${dead}`);
+    // Show all rounds if verbose
+    if (config.verbose && allRounds.length > 0) {
+      for (const { round: rnd, res: rd } of allRounds) {
+        console.log(`\n    R${rnd}:`);
+        const moves = rd.moves;
+        for (const b of bots) {
+          const m = moves[b.id];
+          const mn = m ? (getMoveById(m.moveId)?.name || m.moveId) : '—';
+          console.log(`      ${b.nickname.padEnd(12)} ${mn.padEnd(8)}`);
         }
-      }
-      if (res.deaths.length > 0) {
-        for (const d of res.deaths) {
-          const detail = res.deathDetails[d];
-          if (detail) console.log(`      → ${detail}`);
+        if (rd.deaths.length > 0) {
+          for (const d of rd.deaths) {
+            const detail = rd.deathDetails[d];
+            if (detail) console.log(`      → ${detail}`);
+          }
         }
       }
     }

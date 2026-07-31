@@ -316,13 +316,19 @@ function trivialBot(
 
   for (const myMove of candidates) {
     // ---- 1-ply opponent model: evalExchange + frequency bias ----
-    // Get opponent's move history for frequency weighting
+    // Bayesian frequency estimate: blends observed frequency with uniform prior.
+    // Low data → near-uniform (no overfitting after 1 round). High data → tracks real habits.
     const oppHist = memory.opponentMoves.get(opp.id) || [];
-    const totalMoves = oppHist.length || 1;
+    const N = oppHist.length;
+    const priorWeight = 4; // virtual "uniform" observations
+    const numMoves = oppAvailable.length || 8;
     const oppFreq: Record<string, number> = {};
     for (const mid of oppHist) {
       oppFreq[mid] = (oppFreq[mid] || 0) + 1;
     }
+    // Effective probability = (observed + prior/n) / (total + prior)
+    // N=0: all moves ~1/numMoves. N=1: seen move ~1.5/5=30%, others ~0.5/5=10%
+    // N=8: tracks actual frequency closely.
 
     const oppEval = oppAvailable.map(oppMove => {
       const o = evalExchange(myMove, oppMove, bot, opp);
@@ -333,9 +339,9 @@ function trivialBot(
         oppEnergy: opp.energy - oppMove.cost + o.oppEnergyDelta,
         myLevel: bot.level, oppLevel: opp.level, round: 1,
       });
-      // Frequency bias: Laplace-smoothed. Moves the opponent actually uses get higher weight.
-      const freqBias = ((oppFreq[oppMove.id] || 0) / totalMoves + 0.2) / 1.2;
-      return { move: oppMove, weight: (s + 1000) * freqBias };
+      const observed = oppFreq[oppMove.id] || 0;
+      const effProb = (observed + priorWeight / numMoves) / (N + priorWeight);
+      return { move: oppMove, weight: (s + 1000) * effProb };
     });
 
     const maxW = Math.max(...oppEval.map(e => e.weight));
