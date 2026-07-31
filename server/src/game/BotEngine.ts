@@ -546,7 +546,7 @@ function normalBot(
   const affordable = available.filter(m => bot.energy >= m.cost);
   if (affordable.length === 0) return { moveId: 'yun', targets: [] };
 
-  const opp = others[0];
+  const opp = pickTarget(others);
   const oppAllAvailable = getMovesByLevel(opp.level).filter(m => opp.energy >= m.cost);
 
   // ============================================================
@@ -855,13 +855,16 @@ function getOpponentTendencies(memory: BotMemory, others: PlayerState[]): Tenden
   return { attack: atk / total, defense: def / total, charge: ch / total, special: sp / total };
 }
 
-function pickPrimaryTarget(_bot: PlayerState, others: PlayerState[], memory: BotMemory): PlayerState {
-  let best = others[0], bestHist = 0;
-  for (const o of others) {
-    const h = (memory.opponentHistory.get(o.id) || []).length;
-    if (h > bestHist) { bestHist = h; best = o; }
-  }
-  return best;
+/** Pick a random opponent among those with the lowest energy (most vulnerable). */
+function pickTarget(others: PlayerState[]): PlayerState {
+  if (others.length <= 1) return others[0];
+  const minEnergy = Math.min(...others.map(o => o.energy));
+  const candidates = others.filter(o => o.energy === minEnergy);
+  return randPick(candidates);
+}
+
+function pickPrimaryTarget(_bot: PlayerState, others: PlayerState[], _memory: BotMemory): PlayerState {
+  return pickTarget(others);
 }
 
 // ================================================================
