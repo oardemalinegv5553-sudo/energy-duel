@@ -18,11 +18,11 @@ from gymnasium import spaces
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 # ================================================================
-# Game Engine (Lv.1–5 moves for now)
+# Game Engine (Lv.1–10 moves)
 # ================================================================
+# Format: (id, name, level, cost, type, atk, def, targetType)
 
 MOVES = [
-    # id, name, level, cost, type, atk, def, targetType
     ('yun',       '运',     1, 0,    'charge',   0,   0, 'none'),
     ('fang',      '防',     1, 0,    'defense',  0,  30, 'none'),
     ('bo',        '波',     1, 1,    'attack',  10,   0, 'single'),
@@ -36,6 +36,16 @@ MOVES = [
     ('longdun',   '龙盾',   4, 0,    'defense',  0,   0, 'none'),
     ('haitian',   '骇天',   4, 3,    'attack',  55,   0, 'single'),
     ('min',       '抿',     5, 0.5,  'attack',  15,   0, 'all'),
+    ('xiaomao',   '小毛',   6, 1,    'attack',  25,   0, 'single'),
+    # Lv.7: 欧/跺
+    ('ou',        '欧',     7, 0,    'special',  0,   0, 'single'),
+    ('duo',       '跺',     7, 0,    'special',  0,   0, 'single'),
+    # Lv.8-10: bigger moves
+    ('damao',     '大毛',   8, 1,    'attack',  25,   0, 'single'),
+    ('gangcha',   '钢叉',   8, 1,    'attack',  50,   0, 'single'),
+    ('damao_combo','大小毛结合', 9, 3, 'attack', 50,   0, 'single'),
+    ('niu',       '牛',    10, 1,    'attack',  30,   0, 'single'),
+    ('niu_charge','牛气冲天',10, 3,   'attack',  55,   0, 'single'),
 ]
 
 def get_moves(level):
@@ -90,6 +100,145 @@ def eval_exchange(my_move_id, opp_move_id):
         my_death = True
 
     return (my_death, opp_death, my_ed, opp_ed)
+
+
+# ================================================================
+# Normal Bot — minimax with checkmate detection (Python port)
+# ================================================================
+
+RECURSE_DEPTH = 4       # reduced vs TS (faster training, Python slower)
+CANDIDATE_COUNT = 5
+
+def base_score(move, player, opponent):
+    """Static move scoring (matches BotEngine.ts)."""
+    s = 0.0
+    atk, def_, cost, mtype = move[5], move[6], move[3], move[4]
+    if atk > 0: s += atk * 1.5
+    if def_ > 0: s += def_ * 0.8
+    if mtype == 'charge': s += 12
+    s -= cost * 4
+    if atk >= 50: s += 18
+    if move[0] == 'ou': s += 15
+    if move[0] == 'duo': s += 5
+    return s + random.uniform(-4, 4)
+
+def rank_candidates(moves, player, opponent):
+    scored = [(m, base_score(m, player, opponent)) for m in moves]
+    scored.sort(key=lambda x: -x[1])
+    return [m for m, _ in scored[:CANDIDATE_COUNT]]
+
+def leaf_eval(my_energy, opp_energy, my_level, opp_level):
+    score = (my_energy - opp_energy) * 10
+    my_moves = get_moves(my_level)
+    opp_moves = get_moves(opp_level)
+    my_max_atk = max([m[5] for m in my_moves if m[5] > 0 and my_energy >= m[3]] + [0])
+    opp_max_atk = max([m[5] for m in opp_moves if m[5] > 0 and opp_energy >= m[3]] + [0])
+    my_max_def = max([m[6] for m in my_moves if m[6] > 0 and my_energy >= m[3]] + [0])
+    opp_max_def = max([m[6] for m in opp_moves if m[6] > 0 and opp_energy >= m[3]] + [0])
+    if my_max_atk > opp_max_def and my_max_atk >= 30: score += 60
+    if opp_max_atk > my_max_def and opp_max_atk >= 30: score -= 60
+    if my_max_atk >= 50 and opp_max_def < 50: score += 40
+    if opp_max_atk >= 50 and my_max_def < 50: score -= 40
+    gap = my_energy - opp_energy
+    if gap >= 3: score += 50
+    elif gap >= 2: score += 25
+    elif gap <= -3: score -= 50
+    elif gap <= -2: score -= 25
+    return score
+
+def minimax_eval(my_move, opp_candidates, my_energy, opp_energy, my_level, opp_level, depth):
+    scores = []
+    for opp_move in opp_candidates:
+        my_d, opp_d, my_ed, opp_ed = eval_exchange(my_move[0], opp_move[0])
+        if my_d: scores.append(-2000); continue
+        if opp_d: scores.append(2000); continue
+        new_me = my_energy - my_move[3] + my_ed
+        new_oe = opp_energy - opp_move[3] + opp_ed
+        if depth <= 0:
+            scores.append(leaf_eval(new_me, new_oe, my_level, opp_level))
+            continue
+        my_opts = get_moves(my_level)
+        my_aff = [m for m in my_opts if new_me >= m[3] - 0.001]
+        opp_opts = get_moves(opp_level)
+        opp_aff = [m for m in opp_opts if new_oe >= m[3] - 0.001]
+        if not my_aff or not opp_aff:
+            scores.append(leaf_eval(new_me, new_oe, my_level, opp_level))
+            continue
+        top_my = rank_candidates(my_aff,
+            (None, None, my_level, new_me, None, 0, 0, None),
+            (None, None, opp_level, new_oe, None, 0, 0, None))[:3]
+        future = max(minimax_eval(m, opp_aff[:CANDIDATE_COUNT], new_me, new_oe, my_level, opp_level, depth-1)
+                     for m in top_my)
+        scores.append(future)
+    scores.sort()
+    return sum(scores[:3]) / len(scores[:3])
+
+def normal_bot_move(my_energy, opp_energy, my_level, opp_level, rnd):
+    """Python port of normalBot's decision logic."""
+    all_my = get_moves(my_level)
+    affordable = [m for m in all_my if my_energy >= m[3] - 0.001]
+    opp_all = get_moves(opp_level)
+    opp_affordable = [m for m in opp_all if opp_energy >= m[3] - 0.001]
+
+    if not affordable:
+        return get_move('yun')
+    if not opp_affordable:
+        return random.choice([m for m in affordable if m[5] > 0] or [get_move('yun')])
+
+    # Both at 0, no 欧 → only 运
+    if my_energy < 0.01 and opp_energy < 0.01 and rnd > 1:
+        return get_move('yun')
+
+    # Checkmate detection
+    has_guaji = any(m[0] == 'guaji' for m in affordable)
+    has_haitian = any(m[0] == 'haitian' for m in affordable)
+    has_gangcha = any(m[0] == 'gangcha' for m in affordable)
+    opp_can_block50 = any(m[0] in ('chaofang', 'yuanding') and opp_energy >= m[3] for m in opp_affordable)
+
+    if has_guaji and my_energy >= 3 and not opp_can_block50:
+        return get_move('guaji')
+    if has_haitian and my_energy >= 3:
+        return get_move('haitian')
+    if has_gangcha and my_energy >= 1 and not opp_can_block50:
+        return get_move('gangcha')
+
+    # R1 probe
+    if rnd == 1:
+        r1_opts = [m for m in affordable if m[0] in ('yun', 'ou', 'duo')]
+        return random.choice(r1_opts or [get_move('yun')])
+
+    # Strategic filter
+    reasonable = list(affordable)
+    if opp_energy < 3:
+        reasonable = [m for m in reasonable if m[0] != 'chaofang']
+    opp_has_haitian = opp_level >= 4 and opp_energy >= 3
+    if not opp_has_haitian:
+        reasonable = [m for m in reasonable if m[0] != 'longdun']
+    opp_has_ou = opp_level >= 7
+    if not opp_has_ou:
+        reasonable = [m for m in reasonable if m[0] != 'duo']
+    opp_can_attack = any(m[5] > 0 for m in opp_affordable)
+    if not opp_can_attack:
+        reasonable = [m for m in reasonable if not (m[6] > 0 or m[4] in ('defense', 'special_defense'))]
+    if not reasonable:
+        return get_move('yun')
+
+    # Minimax scoring
+    opp_candidates = rank_candidates(opp_affordable,
+        (None, None, opp_level, opp_energy, None, 0, 0, None),
+        (None, None, my_level, my_energy, None, 0, 0, None))
+    scored = [(m, minimax_eval(m, opp_candidates, my_energy, opp_energy, my_level, opp_level, RECURSE_DEPTH))
+              for m in reasonable]
+    scored.sort(key=lambda x: -x[1])
+
+    # Top-N pool
+    n = min(4 if my_level <= 5 else 5, len(scored))
+    pool = [m for m, _ in scored[:n]]
+    singles = [m for m in pool if m[5] > 0]
+    if len(singles) > 1:
+        best_atk = max(m[5] for m in singles)
+        pool = [m for m in pool if not (m[5] > 0 and m[5] != best_atk)]
+    return random.choice(pool or [get_move('yun')])
 
 
 # ================================================================
@@ -159,29 +308,8 @@ class EnergyDuelEnv(gym.Env):
         if self.my_energy < my_cost - 0.001:
             my_move = get_move('yun')
 
-        # Opponent: heuristic policy (混合 运/防/波/天马)
-        opp_affordable = self._get_affordable(self.opp_energy)
-        if not opp_affordable:
-            opp_move = get_move('yun')
-        else:
-            # Simple heuristic: prefer attacks when safe, defend when threatened
-            my_affordable = self._get_affordable(self.my_energy)
-            my_atks = [m for m in my_affordable if m[5] > 0]
-            if my_atks and random.random() < 0.4:
-                # Defend against my possible attack
-                defs = [m for m in opp_affordable if m[6] > 0 or m[3] == 'defense']
-                if defs:
-                    opp_move = random.choice(defs)
-                else:
-                    opp_move = random.choice(opp_affordable)
-            else:
-                # Attack or charge
-                atks = [m for m in opp_affordable if m[5] > 0]
-                if atks and random.random() < 0.5:
-                    opp_move = random.choice(atks)
-                else:
-                    chgs = [m for m in opp_affordable if m[3] == 'charge']
-                    opp_move = random.choice(chgs) if chgs else random.choice(opp_affordable)
+        # Opponent: normal bot (minimax + checkmate + strategic filter)
+        opp_move = normal_bot_move(self.opp_energy, self.my_energy, self.opp_level, self.my_level, self.round)
 
         # Record opponent move
         self.opp_history.append(opp_move[0])
@@ -244,7 +372,7 @@ def make_env():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--steps', type=int, default=1_000_000, help='Total timesteps')
+    parser.add_argument('--steps', type=int, default=2_000_000, help='Total timesteps')
     parser.add_argument('--eval', action='store_true', help='Evaluate only')
     args = parser.parse_args()
 
