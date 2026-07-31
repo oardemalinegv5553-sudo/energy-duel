@@ -437,9 +437,8 @@ function runSession(config: SimConfig) {
 // ================================================================
 
 interface MultiConfig {
-  bot: BotLevel;
+  bots: BotLevel[];  // one entry per player
   level: number;
-  players: number;
   games: number;
   verbose: boolean;
 }
@@ -451,18 +450,31 @@ function parseMultiArgs(): MultiConfig {
     return i >= 0 ? args[i + 1] : null;
   };
   const has = (key: string) => args.includes(key);
+
+  // --bots trivial,trivial,normal,normal  (comma-separated per player)
+  const botsStr = get('--bots');
+  let bots: BotLevel[];
+  if (botsStr) {
+    bots = botsStr.split(',').map(s => s.trim()) as BotLevel[];
+  } else {
+    // Fallback to --bot: all same type
+    const n = parseInt(get('--players') || '4', 10);
+    const bt = (get('--bot') || 'trivial') as BotLevel;
+    bots = Array(n).fill(bt);
+  }
+
   return {
-    bot: (get('--bot') || 'trivial') as BotLevel,
+    bots,
     level: parseInt(get('--level') || '1', 10),
-    players: parseInt(get('--players') || '4', 10),
     games: parseInt(get('--games') || '5', 10),
     verbose: has('--verbose') || has('-v'),
   };
 }
 
 function runMultiplayer(config: MultiConfig) {
+  const label = config.bots.map(b => botName(b).charAt(0)).join(',');
   console.log(`\n${'═'.repeat(62)}`);
-  console.log(`  多人混战  ${botName(config.bot)} ×${config.players}  Lv.${config.level}  ×${config.games}局`);
+  console.log(`  多人混战  ${config.bots.map((b,i) => `${botName(b)}${i+1}`).join(' vs ')}  Lv.${config.level}  ×${config.games}局`);
   console.log(`${'═'.repeat(62)}`);
 
   for (let g = 1; g <= config.games; g++) {
@@ -487,8 +499,8 @@ function runMultiplayer(config: MultiConfig) {
     room.initialLevel = config.level;
 
     const bots: ReturnType<typeof room.addBot>[] = [];
-    for (let i = 0; i < config.players; i++) {
-      const b = room.addBot(`${botName(config.bot)}${i + 1}`, config.bot);
+    for (let i = 0; i < config.bots.length; i++) {
+      const b = room.addBot(`${botName(config.bots[i])}${i + 1}`, config.bots[i]);
       b.level = config.level;
       bots.push(b);
     }
@@ -565,7 +577,7 @@ function runMultiplayer(config: MultiConfig) {
 // ================================================================
 
 function main() {
-  if (process.argv.includes('--players')) {
+  if (process.argv.includes('--players') || process.argv.includes('--bots')) {
     runMultiplayer(parseMultiArgs());
     return;
   }
