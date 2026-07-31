@@ -17,6 +17,17 @@ import gymnasium as gym
 from gymnasium import spaces
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.callbacks import BaseCallback
+
+class ProgressCallback(BaseCallback):
+    def __init__(self):
+        super().__init__()
+        self.steps_done = 0
+    def _on_step(self):
+        self.steps_done += 1
+        if self.steps_done % 20000 == 0:
+            print(f'  ... {self.num_timesteps:,} steps', flush=True)
+        return True
 # ================================================================
 # Game Engine (Lv.1–10 moves)
 # ================================================================
@@ -385,6 +396,10 @@ def main():
         return
 
     print(f'Training PPO for {args.steps:,} steps...')
+    print('  Opponent: normal bot (minimax depth=4, checkmate, strategic filter)')
+    print('  Environment: 4 parallel Lv.5 1v1 duels')
+    print('  Press Ctrl+C to stop early (model will still be saved)')
+    import sys; sys.stdout.flush()
 
     # Create vectorized environment
     env = DummyVecEnv([make_env for _ in range(4)])
@@ -404,7 +419,10 @@ def main():
         verbose=1,
     )
 
-    model.learn(total_timesteps=args.steps)
+    try:
+        model.learn(total_timesteps=args.steps, callback=ProgressCallback())
+    except KeyboardInterrupt:
+        print('\nTraining interrupted, saving model...')
     model.save('energy_duel_model')
     print('Model saved: energy_duel_model.zip')
 
