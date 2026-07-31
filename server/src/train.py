@@ -457,7 +457,9 @@ def export_onnx():
             return logits
 
     wrapper = PolicyNet(policy)
+    wrapper.eval()
 
+    # dynamo=False → legacy TorchScript exporter, more forgiving with dynamic shapes
     torch.onnx.export(
         wrapper,
         torch.zeros(1, 7),
@@ -466,6 +468,7 @@ def export_onnx():
         output_names=['action_logits'],
         dynamic_axes={'observation': {0: 'batch'}},
         opset_version=11,
+        dynamo=False,
     )
     print('ONNX model exported: energy_duel_model.onnx')
 
