@@ -87,7 +87,7 @@ export default function WaitingRoom({ roomCode, players, isHost, playerId, roomT
           {players.map((p) => (
             <div key={p.id} className={`player-row ${p.id === playerId ? 'is-me' : ''}`}>
               <span className="player-name">
-                {p.isBot && (p.botLevel === 'hard' ? '💀' : p.botLevel === 'easy' ? '🤖' : p.botLevel === 'trivial' ? '🎲' : p.botLevel === 'ml' ? '🧬' : '🧠')} {p.nickname}
+                {p.isBot && (p.botLevel === 'hard' ? '💀' : p.botLevel === 'easy' ? '🤖' : p.botLevel === 'trivial' ? '🎲' : p.botLevel === 'ml' ? '🧬' : p.botLevel === 'llm' ? '🤖' : '🧠')} {p.nickname}
                 {p.id === playerId && ' (你)'}
               </span>
               <span className="player-level">Lv.{p.level}</span>
@@ -115,6 +115,9 @@ export default function WaitingRoom({ roomCode, players, isHost, playerId, roomT
                     <button className="btn btn-sm" onClick={() => addBot('ml')}>
                       🧬 ML人机
                     </button>
+                    <button className="btn btn-sm" onClick={() => addBot('llm')}>
+                      🤖 LLM人机
+                    </button>
                     {!hasHardBot && (
                       <button className="btn btn-sm" onClick={() => addBot('hard')}>
                         💀 困难人机
@@ -134,6 +137,9 @@ export default function WaitingRoom({ roomCode, players, isHost, playerId, roomT
                     </button>
                     <button className="btn btn-sm" onClick={() => addBot('ml')}>
                       🧬 ML人机
+                    </button>
+                    <button className="btn btn-sm" onClick={() => addBot('llm')}>
+                      🤖 LLM人机
                     </button>
                     {!hasHardBot && (
                       <button className="btn btn-sm" onClick={() => addBot('hard')}>

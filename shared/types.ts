@@ -57,7 +57,14 @@ export interface RoomSummary {
 }
 
 // ---- Bot ----
-export type BotLevel = 'easy' | 'normal' | 'hard' | 'trivial' | 'ml';
+export type BotLevel = 'easy' | 'normal' | 'hard' | 'trivial' | 'ml' | 'llm';
+
+// ---- LLM Config ----
+export interface LLMConfig {
+  endpoint: string;
+  apiKey: string;
+  model: string;
+}
 
 // ---- Player State ----
 export interface PlayerState {
@@ -162,6 +169,8 @@ export interface ClientToServerEvents {
   play_again: () => void;
   list_rooms: (ack: (rooms: RoomSummary[]) => void) => void;
   chat_message: (data: { content: string; scope: ChatScope }) => void;
+  set_llm_config: (data: { endpoint: string; apiKey: string; model: string }, ack: (res: { success: boolean; error?: string }) => void) => void;
+  get_llm_config: (ack: (res: { hasConfig: boolean }) => void) => void;
 }
 
 export interface ServerToClientEvents {

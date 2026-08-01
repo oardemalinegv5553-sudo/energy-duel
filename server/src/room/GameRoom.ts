@@ -1,4 +1,4 @@
-import { PlayerState, PlayerInfo, Buff, RoomType, ChatMessage, GamePhase } from '../../../shared/types';
+import { PlayerState, PlayerInfo, Buff, RoomType, ChatMessage, GamePhase, LLMConfig } from '../../../shared/types';
 import { BotMemory, createBotMemory } from '../game/BotEngine';
 
 function generateId(): string {
@@ -30,6 +30,7 @@ export class GameRoom {
   shatteredSkills: Set<string> = new Set();  // skills disabled this game (§3.6)
   cumulativeCounters: Record<string, Record<string, number>> = {};  // playerId → { skillId: count } (§3.7)
   chatMessages: ChatMessage[] = [];  // chat history (max 200)
+  llmConfig?: LLMConfig;            // host's LLM API config (for LLM bots)
 
   constructor(roomCode: string, roomType: RoomType = 'duo') {
     this.roomCode = roomCode;

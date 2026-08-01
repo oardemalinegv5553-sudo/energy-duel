@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Socket } from 'socket.io-client';
 import { ClientToServerEvents, ServerToClientEvents, RoomType, RoomSummary } from '../../../shared/types';
 import RulesModal from './RulesModal';
+import LLMSettings from './LLMSettings';
 
 interface Props {
   socket: Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -26,6 +27,7 @@ export default function Lobby({ socket, onError, onRoomCreated, isLoggedIn, user
   const [team, setTeam] = useState<number>(0);
   const [initialLevel, setInitialLevel] = useState(1);
   const [showRules, setShowRules] = useState(false);
+  const [showLLMSettings, setShowLLMSettings] = useState(false);
   const [showRoomBrowser, setShowRoomBrowser] = useState(false);
   const [roomList, setRoomList] = useState<RoomSummary[]>([]);
 
@@ -112,6 +114,7 @@ export default function Lobby({ socket, onError, onRoomCreated, isLoggedIn, user
     <div className="lobby">
       <RulesModal show={showRules} onClose={() => setShowRules(false)} />
 
+      {showLLMSettings && <LLMSettings socket={socket} onClose={() => setShowLLMSettings(false)} />}
       <h1 className="lobby-title">蓄气对决</h1>
       <p className="lobby-subtitle">在线拍手对战</p>
 
@@ -309,6 +312,9 @@ export default function Lobby({ socket, onError, onRoomCreated, isLoggedIn, user
           type="button"
         >
           查看规则
+        </button>
+        <button className="btn btn-ghost" onClick={() => setShowLLMSettings(true)} type="button">
+          ⚙ 大模型设置
         </button>
       </div>
     </div>

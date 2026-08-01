@@ -288,7 +288,7 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
         socket.emit('error', { message: '每个房间只能添加一个困难人机' });
         return;
       }
-      const levelLabel = data.level === 'easy' ? '简单人机' : data.level === 'hard' ? '困难人机' : data.level === 'trivial' ? '一般人机' : data.level === 'ml' ? 'ML人机' : '普通人机';
+      const levelLabel = data.level === 'easy' ? '简单人机' : data.level === 'hard' ? '困难人机' : data.level === 'trivial' ? '一般人机' : data.level === 'ml' ? 'ML人机' : data.level === 'llm' ? 'LLM人机' : '普通人机';
       const sameLevel = room.getAllPlayers().filter(p => p.isBot && p.botLevel === data.level).length;
       const bot = room.addBot(`${levelLabel}${sameLevel + 1}`, data.level);
       socket.join(room.roomCode);
@@ -367,6 +367,23 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
         // Broadcast to entire room
         io.to(room.roomCode).emit('chat_broadcast', msg);
       }
+    });
+
+    // ---- LLM Config ----
+    socket.on('set_llm_config', (data, ack) => {
+      const info = socketRooms.get(socket.id);
+      if (!info) { ack?.({ success: false }); return; }
+      const room = roomManager.getRoom(info.roomCode);
+      if (!room) { ack?.({ success: false }); return; }
+      if (room.hostId !== info.playerId) { ack?.({ success: false, error: '仅房主可设置' }); return; }
+      room.llmConfig = { endpoint: data.endpoint, apiKey: data.apiKey, model: data.model };
+      ack?.({ success: true });
+    });
+    socket.on('get_llm_config', (ack) => {
+      const info = socketRooms.get(socket.id);
+      if (!info) { ack?.({ hasConfig: false }); return; }
+      const room = roomManager.getRoom(info.roomCode);
+      ack?.({ hasConfig: !!room?.llmConfig });
     });
 
     // ---- Leave Room (intentional) ----

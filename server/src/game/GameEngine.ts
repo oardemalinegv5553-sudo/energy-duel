@@ -3,8 +3,9 @@ import { GameRoom } from '../room/GameRoom';
 import { resolveEnergy } from './EnergyResolver';
 import { resolveAttacks } from './MoveResolver';
 import { computeRankings, computeLevelUps, applyLevelUps } from './LevelResolver';
-import { getMoveById, MOVES } from '../data/moves';
+import { getMoveById, getMovesByLevel, MOVES } from '../data/moves';
 import { chooseBotMove, chooseHardBotMove, createBotMemory, recordOpponentMove } from './BotEngine';
+import { getLLMBotMove } from '../llmBot';
 import { RoundResolution, GameState, PlayerInfo } from '../../../shared/types';
 
 const THINKING_TIME = 15_000;  // 15 seconds
@@ -72,7 +73,7 @@ export class GameEngine {
   }
 
   /** Start the thinking phase (players choose moves) */
-  startThinkingPhase(room: GameRoom): void {
+  async startThinkingPhase(room: GameRoom): Promise<void> {
     room.phase = 'playing';
     room.gamePhase = 'thinking';
     room.pendingMoves.clear();
@@ -92,7 +93,7 @@ export class GameEngine {
     this.io.to(room.roomCode).emit('phase_change', { phase: 'thinking', state });
 
     // Run bot moves (easy/normal first, hard ones wait for checkAllSubmitted)
-    this.runBotMoves(room);
+    await this.runBotMoves(room);
 
     // If everyone already submitted (e.g. all-bot game), go straight to reveal
     // Only set the thinking timer if the round didn't already advance
@@ -105,18 +106,31 @@ export class GameEngine {
   }
 
   /** Run easy/normal bot moves at the beginning of thinking phase (hard bots wait) */
-  private runBotMoves(room: GameRoom): void {
+  private async runBotMoves(room: GameRoom): Promise<void> {
     const alive = room.getAlivePlayers();
     for (const bot of alive) {
       if (!bot.isBot) continue;
-      if (bot.botLevel === 'hard') continue; // hard bot waits for everyone else
+      if (bot.botLevel === 'hard') continue;
       if (room.pendingMoves.has(bot.id)) continue;
 
       const memory = room.botMemories.get(bot.id) || createBotMemory();
+
+      if (bot.botLevel === 'llm' && room.llmConfig) {
+        // Async LLM call with 8s timeout → fallback to trivial MCTS
+        const allMoves = getMovesByLevel(bot.level);
+        const available = allMoves.filter(m => bot.energy >= m.cost);
+        try {
+          const result = await getLLMBotMove(room.llmConfig, bot, room.getAllPlayers(), available, room.round);
+          if (result) {
+            room.pendingMoves.set(bot.id, { moveId: result.moveId, targets: result.targets });
+            continue;
+          }
+        } catch (_) { /* fall through to MCTS fallback */ }
+      }
+
       const { moveId, targets } = chooseBotMove(
         bot.botLevel || 'easy', bot, room.getAllPlayers(), room.round, memory, room.shatteredSkills
       );
-      // Validate & submit
       const moveDef = getMoveById(moveId);
       if (moveDef && bot.energy >= moveDef.cost) {
         room.pendingMoves.set(bot.id, { moveId, targets });
