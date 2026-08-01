@@ -3,7 +3,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { RoomManager } from './room/RoomManager';
 import { GameEngine } from './game/GameEngine';
 import { GameRoom } from './room/GameRoom';
-import { ClientToServerEvents, ServerToClientEvents } from '../../shared/types';
+import { ClientToServerEvents, ServerToClientEvents, LLMConfig } from '../../shared/types';
 import { AuthManager } from './auth/AuthManager';
 
 export function createSocketServer(httpServer: HTTPServer, authManager: AuthManager) {
@@ -291,6 +291,10 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
       const levelLabel = data.level === 'easy' ? '简单人机' : data.level === 'hard' ? '困难人机' : data.level === 'trivial' ? '一般人机' : data.level === 'ml' ? 'ML人机' : data.level === 'llm' ? 'LLM人机' : '普通人机';
       const sameLevel = room.getAllPlayers().filter(p => p.isBot && p.botLevel === data.level).length;
       const bot = room.addBot(`${levelLabel}${sameLevel + 1}`, data.level);
+      // Sync LLM config from socket to room (for LLM bots)
+      if (data.level === 'llm' && socketLLMConfigs.has(socket.id)) {
+        room.llmConfig = socketLLMConfigs.get(socket.id);
+      }
       socket.join(room.roomCode);
       console.log(`[room] Bot ${bot.nickname} (${data.level}) added to ${room.roomCode}`);
 
@@ -369,21 +373,16 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
       }
     });
 
-    // ---- LLM Config ----
+    // ---- LLM Config (per-socket, no room needed) ----
+    const socketLLMConfigs = new Map<string, LLMConfig>();
+
     socket.on('set_llm_config', (data, ack) => {
-      const info = socketRooms.get(socket.id);
-      if (!info) { ack?.({ success: false }); return; }
-      const room = roomManager.getRoom(info.roomCode);
-      if (!room) { ack?.({ success: false }); return; }
-      if (room.hostId !== info.playerId) { ack?.({ success: false, error: '仅房主可设置' }); return; }
-      room.llmConfig = { endpoint: data.endpoint, apiKey: data.apiKey, model: data.model };
+      socketLLMConfigs.set(socket.id, { endpoint: data.endpoint, apiKey: data.apiKey, model: data.model });
       ack?.({ success: true });
     });
+
     socket.on('get_llm_config', (ack) => {
-      const info = socketRooms.get(socket.id);
-      if (!info) { ack?.({ hasConfig: false }); return; }
-      const room = roomManager.getRoom(info.roomCode);
-      ack?.({ hasConfig: !!room?.llmConfig });
+      ack?.({ hasConfig: socketLLMConfigs.has(socket.id) });
     });
 
     // ---- Leave Room (intentional) ----
