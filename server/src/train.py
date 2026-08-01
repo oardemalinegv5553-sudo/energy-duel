@@ -332,7 +332,7 @@ class EnergyDuelEnv(gym.Env):
         my_death, opp_death, my_ed, opp_ed = eval_exchange(my_move[0], opp_move[0])
 
         # Apply energy
-        self.my_energy = max(0, self.my_energy - (my_move[3] if my_move[0] != 'yun' or self.my_energy < my_cost else 0) + my_ed)
+        self.my_energy = max(0, self.my_energy - my_move[3] + my_ed)
         self.opp_energy = max(0, self.opp_energy - opp_move[3] + opp_ed)
 
         # Death
