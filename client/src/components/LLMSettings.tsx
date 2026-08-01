@@ -17,9 +17,9 @@ const PRESETS: { label: string; endpoint: string; model: string }[] = [
 
 export default function LLMSettings({ socket, onClose }: Props) {
   const [preset, setPreset] = useState(0);
-  const [endpoint, setEndpoint] = useState('');
+  const [endpoint, setEndpoint] = useState(PRESETS[0].endpoint);
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('');
+  const [model, setModel] = useState(PRESETS[0].model);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
 
