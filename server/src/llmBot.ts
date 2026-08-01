@@ -251,7 +251,17 @@ export async function getLLMBotMove(
 
     const move = parseMoveName(raw, affordable);
     if (move) {
-      return { moveId: move.id, targets: [] }; // targets filled by makeTargets in BotEngine
+      // Fill targets based on move type
+      let targets: string[] = [];
+      if (move.targetType === 'all') {
+        targets = others.map(o => o.id);
+      } else if (move.targetType === 'single' && others.length > 0) {
+        targets = [others[Math.floor(Math.random() * others.length)].id];
+      } else if (move.targetType === 'dual' && others.length > 0) {
+        const shuffled = [...others].sort(() => Math.random() - 0.5);
+        targets = shuffled.slice(0, Math.min(2, others.length)).map(o => o.id);
+      }
+      return { moveId: move.id, targets };
     }
 
     console.log(`[llmBot] Could not parse move from: "${raw}"`);

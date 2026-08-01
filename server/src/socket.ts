@@ -412,6 +412,7 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
 
     // ---- Disconnect (accidental — grace period) ----
     socket.on('disconnect', () => {
+      socketLLMConfigs.delete(socket.id); // clean up API key
       console.log(`[socket] disconnected: ${socket.id}`);
       handleLeave(socket, false);
     });
