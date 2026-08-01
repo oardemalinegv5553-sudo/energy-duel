@@ -6,3 +6,4 @@ dist/
 *.tsbuildinfo
 server/data/
 __pycache__/
+server/src/test_llm.ts

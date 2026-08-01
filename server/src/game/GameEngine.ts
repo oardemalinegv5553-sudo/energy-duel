@@ -125,7 +125,20 @@ export class GameEngine {
             room.pendingMoves.set(bot.id, { moveId: result.moveId, targets: result.targets });
             continue;
           }
-        } catch (_) { /* fall through to MCTS fallback */ }
+          console.log(`[llmBot] ${bot.nickname} could not parse response, falling back`);
+        } catch (_) {
+          console.log(`[llmBot] ${bot.nickname} API failed, falling back to trivial MCTS`);
+        }
+        // Emit a system chat so players know
+        room.addChatMessage({
+          id: Math.random().toString(36).substring(2, 10),
+          playerId: 'system',
+          nickname: '系统',
+          content: `${bot.nickname} API 调用失败，回落规则AI`,
+          scope: 'all',
+          timestamp: Date.now(),
+        });
+        this.io.to(room.roomCode).emit('chat_broadcast', room.chatMessages[room.chatMessages.length - 1]);
       }
 
       const { moveId, targets } = chooseBotMove(
