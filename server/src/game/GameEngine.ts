@@ -115,8 +115,12 @@ export class GameEngine {
 
       const memory = room.botMemories.get(bot.id) || createBotMemory();
 
-      if (bot.botLevel === 'llm' && room.llmConfig) {
-        // Async LLM call with 8s timeout → fallback to trivial MCTS
+      if (bot.botLevel === 'llm') {
+        if (!room.llmConfig) {
+          console.log(`[llmBot] ${bot.nickname}: room.llmConfig is missing, falling back to rules`);
+          // Fall through to chooseBotMove
+        } else {
+        // Async LLM call with 8s timeout → fallback to rules
         const allMoves = getMovesByLevel(bot.level);
         const available = allMoves.filter(m => bot.energy >= m.cost);
         try {
@@ -139,7 +143,8 @@ export class GameEngine {
           timestamp: Date.now(),
         });
         this.io.to(room.roomCode).emit('chat_broadcast', room.chatMessages[room.chatMessages.length - 1]);
-      }
+        } // end try/catch
+      } // end else (room.llmConfig exists)
 
       const { moveId, targets } = chooseBotMove(
         bot.botLevel || 'easy', bot, room.getAllPlayers(), room.round, memory, room.shatteredSkills
