@@ -51,7 +51,7 @@ const SYSTEM_PROMPT = `你是"蓄气对决"（Energy Duel）的AI玩家。你的
 4. **注意使用特殊招式**：超防防挂机，欧偷气，跺反制欧，龙盾防骇天，毒盾防毒，莲花宝座霸体2回合，金牛漩涡顶击碎园丁/金牛/海王，海王震天击碎园丁/金牛/海王
 5. **注意等级差**：高等级有更强招式，低等级需保守；每个人等级不同，要推理他们想干什么
 6. **注意链式推理**：不要只看眼前，要做“预判别人的预判”，甚至“预判别人预判我的预判”
-7. **注意击碎限制**：有些招式需要先用特定招式3次才能发动（如莲花宝座、金牛漩涡顶、海王震天）
+7. **注意累计发动限制**：有些招式需要先用特定招式3次才能发动（如莲花宝座、金牛漩涡顶、海王震天）
 8. **注意特殊招式**：欧、跺、龙盾、毒盾、莲花宝座等有特殊规则，要合理利用
 9. **注意多人对战**：全体攻击（all类）会打到除自己外的所有活着的玩家；双目标攻击（dual类）可选择1-2个目标
 10. **注意对手的策略**：对手可能会蓄气、破防、击碎、偷能量等，要根据他们的行为调整策略
@@ -139,6 +139,7 @@ function buildUserMessage(
   others: PlayerState[],
   available: MoveDef[],
   round: number,
+  cumulativeProgress?: Record<string, number>,
 ): string {
   const lines: string[] = [];
 
@@ -159,6 +160,15 @@ function buildUserMessage(
   }
 
   lines.push('');
+  // Cumulative trigger progress
+  if (cumulativeProgress && Object.keys(cumulativeProgress).length > 0) {
+    const progStr = Object.entries(cumulativeProgress)
+      .filter(([_, count]) => count > 0)
+      .map(([skill, count]) => `${skill}:${count}/3`)
+      .join(', ');
+    if (progStr) lines.push(`累计进度：${progStr}`);
+  }
+
   lines.push('你当前可用的招式（已过滤等级/能量/击碎限制）：');
   for (const m of available) {
     const atkStr = m.atk > 0 ? ` ATK=${m.atk}` : '';
@@ -244,7 +254,7 @@ export async function getLLMBotMove(
   const affordable = available.filter(m => bot.energy >= m.cost);
   if (affordable.length === 0) return { moveId: 'yun', targets: [] };
 
-  const userMessage = buildUserMessage(bot, others, affordable, round);
+  const userMessage = buildUserMessage(bot, others, affordable, round, bot.cumulativeProgress);
 
   try {
     const raw = await Promise.race([
