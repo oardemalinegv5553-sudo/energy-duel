@@ -152,7 +152,7 @@ export interface GameState {
   roomType: RoomType;
   eliminationOrder: string[];
   deadline?: number;    // timestamp ms for thinking phase deadline
-  shatteredSkills: string[];  // currently shattered skill IDs (for client gray-out)
+  shatteredSkills: Record<string, string[]>;  // playerId → shattered skill IDs
 }
 
 // ---- Socket Events ----

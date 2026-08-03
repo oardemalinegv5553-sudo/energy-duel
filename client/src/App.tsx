@@ -26,7 +26,7 @@ export default function App() {
   const [phase, setPhase] = useState<GamePhase>('waiting');
   const [resolution, setResolution] = useState<RoundResolution | null>(null);
   const [deadline, setDeadline] = useState<number>(0);
-  const [shatteredSkills, setShatteredSkills] = useState<string[]>([]);
+  const [shatteredSkills, setShatteredSkills] = useState<Record<string, string[]>>({});
   const [gameOverData, setGameOverData] = useState<{
     rankings: Ranking[];
     levelUps: LevelUp[];
@@ -118,7 +118,7 @@ export default function App() {
       setPhase(data.state.phase);
       setPlayers(data.state.players);
       setDeadline(data.state.deadline || 0);
-      setShatteredSkills(data.state.shatteredSkills || []);
+      setShatteredSkills(data.state.shatteredSkills || {});
       setView('playing');
     });
 
@@ -129,7 +129,7 @@ export default function App() {
         setRound(data.state.round);
         setPlayers(data.state.players);
         setDeadline(data.state.deadline || 0);
-        setShatteredSkills(data.state.shatteredSkills || []);
+        setShatteredSkills(data.state.shatteredSkills || {});
       }
       if (data.resolution) {
         setResolution(data.resolution);

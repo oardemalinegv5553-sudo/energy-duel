@@ -455,15 +455,18 @@ function mlBot(
 
 export function chooseBotMove(
   level: BotLevel, bot: PlayerState, allPlayers: PlayerState[],
-  round: number, memory: BotMemory, shatteredSkills?: Set<string>
+  round: number, memory: BotMemory, shatteredSkills?: Map<string, Set<string>>
 ): { moveId: string; targets: string[] } {
   let allAvailable = getMovesByLevel(bot.level);
   const others = allPlayers.filter(p => p.alive && p.id !== bot.id);
   if (others.length === 0) return { moveId: 'yun', targets: [] };
 
-  // Filter shattered skills
+  // Filter shattered skills — per-player
   if (shatteredSkills) {
-    allAvailable = allAvailable.filter(m => !shatteredSkills.has(m.id));
+    const myShattered = shatteredSkills.get(bot.id);
+    if (myShattered) {
+      allAvailable = allAvailable.filter(m => !myShattered.has(m.id));
+    }
   }
   // Filter cumulative trigger moves where counter isn't met
   allAvailable = allAvailable.filter(m => {
@@ -1013,12 +1016,15 @@ export function chooseHardBotMove(
   bot: PlayerState,
   allPlayers: PlayerState[],
   pendingMoves: Map<string, { moveId: string; targets: string[] }>,
-  shatteredSkills?: Set<string>
+  shatteredSkills?: Map<string, Set<string>>
 ): { moveId: string; targets: string[] } {
   let allAvailable = getMovesByLevel(bot.level);
-  // Filter shattered skills
+  // Filter shattered skills — per-player
   if (shatteredSkills) {
-    allAvailable = allAvailable.filter(m => !shatteredSkills.has(m.id));
+    const myShattered = shatteredSkills.get(bot.id);
+    if (myShattered) {
+      allAvailable = allAvailable.filter(m => !myShattered.has(m.id));
+    }
   }
   // Filter cumulative trigger moves
   allAvailable = allAvailable.filter(m => {
@@ -1113,15 +1119,14 @@ export function chooseHardBotMove(
       const longdun2 = affordable.find(m => m.id === 'longdun');
       if (longdun2) return makeTargets(longdun2, bot, others);
     }
-    // 超防: blocks up to 50, only beaten by 降龙十八掌(55)
-    if (maxATK > 30 && !hasXianglong) {
-      const chaofang = affordable.find(m => m.id === 'chaofang');
-      if (chaofang) return makeTargets(chaofang, bot, others);
-    }
-    // 防(30): blocks ≤30 ATK
-    if (maxATK <= 30) {
-      const fang = affordable.find(m => m.id === 'fang');
-      if (fang) return makeTargets(fang, bot, others);
+    // Find best defense: cheapest move with DEF >= required (防/超防/莲花/园丁/金牛/海王)
+    const neededDef = maxATK > 30 && !hasXianglong ? 50 : maxATK > 0 ? 30 : 0;
+    if (neededDef > 0) {
+      const candidates = affordable.filter(m => m.def >= neededDef && m.atk === 0);
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => a.cost - b.cost || b.def - a.def); // cheapest, then highest DEF
+        return makeTargets(candidates[0], bot, others);
+      }
     }
     // Fallback: any defense
     const anyDef = affordable.filter(m => m.def > 0).sort((a, b) => b.def - a.def);

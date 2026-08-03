@@ -33,7 +33,9 @@ export class GameEngine {
       roomType: room.roomType,
       eliminationOrder: room.eliminationOrder,
       deadline: room.thinkingDeadline || undefined,
-      shatteredSkills: [...room.shatteredSkills],
+      shatteredSkills: Object.fromEntries(
+        [...room.shatteredSkills.entries()].map(([pid, skills]) => [pid, [...skills]])
+      ),
     };
   }
 
@@ -87,7 +89,9 @@ export class GameEngine {
       roomType: room.roomType,
       eliminationOrder: room.eliminationOrder,
       deadline: room.thinkingDeadline,
-      shatteredSkills: [...room.shatteredSkills],
+      shatteredSkills: Object.fromEntries(
+        [...room.shatteredSkills.entries()].map(([pid, skills]) => [pid, [...skills]])
+      ),
     };
 
     this.io.to(room.roomCode).emit('phase_change', { phase: 'thinking', state });
@@ -180,8 +184,8 @@ export class GameEngine {
     }
     if (player.energy < moveDef.cost) return false;
 
-    // Check shattered skills (§3.6)
-    if (room.shatteredSkills.has(moveId)) return false;
+    // Check shattered skills (§3.6) — per-player
+    if (room.shatteredSkills.get(playerId)?.has(moveId)) return false;
 
     // Check cumulative trigger (§3.7)
     if (moveDef.cumulativeTrigger) {
@@ -300,12 +304,13 @@ export class GameEngine {
       }
     }
 
-    // Reset shatter state + cumulative counters when someone dies (§3.6, §3.7)
+    // Reset per-player shatter + dead players' cumulative counters (§3.6, §3.7)
     if (resolution.deaths.length > 0) {
-      room.shatteredSkills.clear();
-      // Only reset cumulative counters for dead players (survivors keep progress)
       for (const pid of resolution.deaths) {
+        room.shatteredSkills.delete(pid);
         delete room.cumulativeCounters[pid];
+        const deadPlayer = room.players.get(pid);
+        if (deadPlayer) deadPlayer.cumulativeProgress = {};
       }
     }
 
@@ -347,7 +352,9 @@ export class GameEngine {
       roomCode: room.roomCode,
       roomType: room.roomType,
       eliminationOrder: room.eliminationOrder,
-      shatteredSkills: [...room.shatteredSkills],
+      shatteredSkills: Object.fromEntries(
+        [...room.shatteredSkills.entries()].map(([pid, skills]) => [pid, [...skills]])
+      ),
     };
 
     this.io.to(room.roomCode).emit('phase_change', { phase: 'result', state, resolution });
@@ -377,7 +384,12 @@ export class GameEngine {
           this.endGame(room);
         } else {
           if (hadDeaths) {
-            for (const p of aliveAfter) { p.energy = 0; }
+            for (const p of aliveAfter) {
+              p.energy = 0;
+              p.buffs = [];
+              p.cumulativeProgress = {};
+            }
+            room.cumulativeCounters = {};
           }
           room.round++;
           this.startThinkingPhase(room);
@@ -390,7 +402,12 @@ export class GameEngine {
           this.endGame(room);
         } else {
           if (hadDeaths) {
-            for (const p of aliveAfter) { p.energy = 0; }
+            for (const p of aliveAfter) {
+              p.energy = 0;
+              p.buffs = [];
+              p.cumulativeProgress = {};
+            }
+            room.cumulativeCounters = {};
           }
           room.round++;
           this.startThinkingPhase(room);
@@ -500,7 +517,9 @@ export class GameEngine {
       roomCode: room.roomCode,
       roomType: room.roomType,
       eliminationOrder: room.eliminationOrder,
-      shatteredSkills: [...room.shatteredSkills],
+      shatteredSkills: Object.fromEntries(
+        [...room.shatteredSkills.entries()].map(([pid, skills]) => [pid, [...skills]])
+      ),
     };
 
     this.io.to(room.roomCode).emit('game_over', {
@@ -517,8 +536,8 @@ export class GameEngine {
     'jinniu': ['haiwang'],  // 金牛被击碎时，海王也一同被击碎
   };
 
-  /** Apply shattered skill effects: disable skills without killing the target.
-   *  Shatter bypasses normal defense — if target uses a shatterable skill, it IS shattered. */
+  /** Apply shattered skill effects: disable skills per-player without killing.
+   *  Death management is handled by MoveResolver — this only tracks which skills are disabled. */
   applyShatter(room: GameRoom, resolution: RoundResolution): void {
     const moves = room.pendingMoves;
     for (const [pid, sub] of moves) {
@@ -528,32 +547,29 @@ export class GameEngine {
       const targetsToShatter = moveDef.shatterTargets || (moveDef.shatterTarget ? [moveDef.shatterTarget] : []);
 
       for (const targetId of sub.targets) {
-        // Check if the target is actually using a shatterable skill
         const targetSub = moves.get(targetId);
         const targetMove = targetSub ? getMoveById(targetSub.moveId) : null;
         if (!targetMove || !targetsToShatter.includes(targetMove.id)) continue;
 
-        // Attacker must not be 跺-killed (can't shatter if counter-killed)
+        // Attacker must not be 跺-killed
         if (resolution.deathDetails[pid]?.includes('跺')) continue;
 
-        // Shatter the target's skill (and chained skills) — bypasses defense
+        // Per-player shatter: only the targeted player loses these skills
+        if (!room.shatteredSkills.has(targetId)) {
+          room.shatteredSkills.set(targetId, new Set());
+        }
+        const playerShattered = room.shatteredSkills.get(targetId)!;
         for (const skillId of targetsToShatter) {
-          room.shatteredSkills.add(skillId);
+          playerShattered.add(skillId);
           const chain = GameEngine.SHATTER_CHAIN[skillId];
           if (chain) {
             for (const chained of chain) {
-              room.shatteredSkills.add(chained);
+              playerShattered.add(chained);
             }
           }
         }
 
-        // Remove victim from deaths (shatter doesn't kill) — unless 跺-killed
-        if (!resolution.deathDetails[targetId]?.includes('跺')) {
-          resolution.deaths = resolution.deaths.filter(d => d !== targetId);
-          delete resolution.deathDetails[targetId];
-        }
-
-        // Find the attack record and update description
+        // Update attack description (deaths handled by MoveResolver)
         const attack = resolution.attacks.find(a => a.attacker === pid && a.target === targetId);
         if (attack) {
           const victimName = room.players.get(targetId)?.nickname || '?';

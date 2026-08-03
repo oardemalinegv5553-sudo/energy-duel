@@ -16,7 +16,7 @@ interface Props {
   roomCode: string;
   socket: Socket<ServerToClientEvents, ClientToServerEvents>;
   uiMode: 'normal' | 'compact';
-  shatteredSkills: string[];
+  shatteredSkills: Record<string, string[]>;
 }
 
 export default function GameScreen({
