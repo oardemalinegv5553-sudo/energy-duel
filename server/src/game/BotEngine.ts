@@ -1119,8 +1119,10 @@ export function chooseHardBotMove(
       const longdun2 = affordable.find(m => m.id === 'longdun');
       if (longdun2) return makeTargets(longdun2, bot, others);
     }
-    // Find best defense: cheapest move with DEF >= required (防/超防/莲花/园丁/金牛/海王)
-    const neededDef = maxATK > 30 && !hasXianglong ? 50 : maxATK > 0 ? 30 : 0;
+    // Find best defense: cheapest with DEF > incoming ATK (防/超防/莲花/园丁/金牛/海王)
+    // 骇天(55) beats 超防(50), needs 园丁/金牛/海王(75) or 莲花宝座(300)
+    // 骇天(55) beats 超防(50), need DEF >= 55 → 园丁/金牛/海王(75)
+    const neededDef = hasXianglong ? maxATK : (maxATK > 30 ? 50 : maxATK > 0 ? 30 : 0);
     if (neededDef > 0) {
       const candidates = affordable.filter(m => m.def >= neededDef && m.atk === 0);
       if (candidates.length > 0) {
