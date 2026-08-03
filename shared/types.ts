@@ -57,7 +57,7 @@ export interface RoomSummary {
 }
 
 // ---- Bot ----
-export type BotLevel = 'easy' | 'normal' | 'hard' | 'trivial' | 'ml' | 'llm';
+export type BotLevel = 'easy' | 'normal' | 'hard' | 'trivial' | 'llm';
 
 // ---- LLM Config ----
 export interface LLMConfig {
