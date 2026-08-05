@@ -369,10 +369,18 @@ function trivialBot(
     return makeTargets(getMoveById('yun')!, bot, others);
   }
 
-  // Filter useless moves before MCTS (same logic as normal bot)
+  // Filter useless moves before MCTS (matches normal bot's strategic filters)
   const oppCanAttack = oppAvailable.some(m => m.atk > 0);
   let candidates = oppCanAttack ? affordable
     : affordable.filter(m => !(m.def > 0 || m.type === 'special_defense'));
+  // 超防(1费): only worth it when opponent ≥3 energy (挂机 threat)
+  if (opp.energy < 3) candidates = candidates.filter(m => m.id !== 'chaofang');
+  // 龙盾(0费): only vs 骇天, otherwise DEF=0 = useless
+  if (opp.level < 4 || opp.energy < 3) candidates = candidates.filter(m => m.id !== 'longdun');
+  // 毒盾: only useful if opponent has 毒 unlocked
+  if (opp.level < 12) candidates = candidates.filter(m => m.id !== 'dudun');
+  // 跺: only useful if opponent has 欧 unlocked
+  if (opp.level < 7) candidates = candidates.filter(m => m.id !== 'duo');
   if (candidates.length === 0) candidates = [getMoveById('yun')!];
 
   // Run MCTS for each candidate move
