@@ -133,7 +133,7 @@ function mctsEvalState(state: MCTSState): number {
 function mctsSmartPick(
   myMoves: MoveDef[], oppMoves: MoveDef[],
   player: PlayerState, opponent: PlayerState,
-  personality: TrivialPersonality, conservative: boolean
+  personality: TrivialPersonality, conservative: boolean, threatLevel: number, multiplayer: boolean
 ): MoveDef {
   if (myMoves.length === 0) return getMoveById('yun')!;
 
@@ -148,9 +148,13 @@ function mctsSmartPick(
   const oppDefRate = oppMoves.length > 0
     ? oppMoves.filter(m => m.def > 0 || m.type === 'special_defense').length / oppMoves.length : 0;
 
-  // Personality-dependent probabilities
-  const pDefend  = personality === 'aggressive' ? 0.30 : personality === 'charger' ? 0.40 : 0.65;
-  const pAttack  = personality === 'aggressive' ? 0.80 : personality === 'charger' ? 0.30 : 0.55;
+  // Personality-dependent probabilities, adjusted by global threat scan
+  let pDefend  = personality === 'aggressive' ? 0.30 : personality === 'charger' ? 0.40 : 0.65;
+  let pAttack  = personality === 'aggressive' ? 0.80 : personality === 'charger' ? 0.30 : 0.55;
+  if (threatLevel === 1) { pDefend = Math.min(1, pDefend * 1.5); pAttack *= 0.6; }  // threat → defense
+  if (threatLevel === 2) { pAttack = Math.min(1, pAttack * 1.4); pDefend *= 0.7; }  // opportunity → attack
+  // Multiplayer caution: no kill window, no threat, but 2+ opponents → play safer
+  if (threatLevel === 0 && multiplayer) { pAttack *= 0.5; pDefend = Math.min(1, pDefend * 1.3); }
   const pCharge  = personality === 'aggressive' ? 0.50 : personality === 'charger' ? 0.95 : 0.80;
   let chargeBias = personality === 'aggressive' ? 5 : personality === 'charger' ? 35 : 20;
   if (conservative) chargeBias = Math.floor(chargeBias * 1.5); // global stalemate → charge harder
@@ -200,7 +204,7 @@ function mctsSmartPick(
 }
 
 // ---- MCTS rollout (smart for self, baseScore-weighted for opponent) ----
-function mctsSimulate(state: MCTSState, botLevel: number, oppLevel: number, depth: number, personality: TrivialPersonality, conservative: boolean): number {
+function mctsSimulate(state: MCTSState, botLevel: number, oppLevel: number, depth: number, personality: TrivialPersonality, conservative: boolean, threatLevel: number, multiplayer: boolean): number {
   if (depth >= 12) return -200;
 
   const myMoves = getMovesByLevel(botLevel).filter(m => state.myEnergy >= m.cost);
@@ -212,7 +216,7 @@ function mctsSimulate(state: MCTSState, botLevel: number, oppLevel: number, dept
     ? mctsSmartPick(myMoves, oppMoves,
         { energy: state.myEnergy, level: botLevel } as any,
         { energy: state.oppEnergy, level: oppLevel } as any,
-        personality, conservative)
+        personality, conservative, threatLevel, multiplayer)
     : getMoveById('yun')!;
 
   // Opponent: baseScore-weighted random (we model them as "reasonable but not smart")
@@ -241,7 +245,7 @@ function mctsSimulate(state: MCTSState, botLevel: number, oppLevel: number, dept
     myLevel: botLevel,
     oppLevel: oppLevel,
     round: state.round + 1,
-  }, botLevel, oppLevel, depth + 1, personality, conservative);
+  }, botLevel, oppLevel, depth + 1, personality, conservative, threatLevel, multiplayer);
 }
 
 // ---- Softmax: prefer good moves but stay unpredictable ----
@@ -284,19 +288,70 @@ function trivialBot(
   const personality = memory.trivialPersonality;
   const conservative = memory.globalConservative;
 
-  // ---- Smart opponent selection for multi-player ----
-  // In 3+ player games, pick the RIGHT opponent instead of blindly using others[0].
-  // - If we can attack: focus on the most vulnerable (lowest energy) opponent
-  // - If we're threatened: focus on the most dangerous (highest energy/level) opponent
-  const canAttack = affordable.some(m => m.atk > 0);
-  const lowestEnergy = Math.min(...others.map(o => o.energy));
-  const highestEnergy = Math.max(...others.map(o => o.energy));
-  // Most vulnerable: lowest energy; most dangerous: highest energy or level
-  const vulnerable = others.filter(o => o.energy === lowestEnergy);
-  const dangerous = others.filter(o => o.energy === highestEnergy);
-  const opp = canAttack
-    ? randPick(vulnerable.length > 0 ? vulnerable : others)
-    : randPick(dangerous.length > 0 ? dangerous : others);
+  // ---- Global opponent scan for multi-player awareness ----
+  // Scan ALL opponents before MCTS to understand threats, opportunities, and the field.
+  // threatLevel: 0=normal, 1=someone can kill me, 2=I can kill someone
+  let threatLevel = 0;
+  let scanOpp = others[0];
+  let bestKillScore = -1;
+  let bestThreatScore = -1;
+  const myAtks = affordable.filter(m => m.atk > 0);
+  const myDefs = affordable.filter(m => m.def > 0 || m.type === 'special_defense');
+  const myMaxDef = myDefs.length > 0 ? Math.max(...myDefs.map(m => m.def)) : 0;
+
+  for (const o of others) {
+    const oMoves = getMovesByLevel(o.level).filter(m => o.energy >= m.cost);
+    const oAtks = oMoves.filter(m => m.atk > 0);
+    const oDefs = oMoves.filter(m => m.def > 0 || m.type === 'special_defense');
+    const oMaxDef = oDefs.length > 0 ? Math.max(...oDefs.map(m => m.def)) : 0;
+
+    // Can I kill this opponent? (my best ATK > their best DEF, or they have no defense)
+    const myBestAtk = myAtks.length > 0 ? Math.max(...myAtks.map(m => m.atk)) : 0;
+    const canKill = myBestAtk > 0 && (oMaxDef === 0 || myBestAtk > oMaxDef) && oAtks.every(a => myBestAtk >= a.atk + 9 || a.atk - myBestAtk < 9);
+    const killScore = canKill ? (10 - o.energy) * (myBestAtk / 10) : 0;
+
+    // Can this opponent kill me? (their best ATK > my best DEF, or I have no defense)
+    const oBestAtk = oAtks.length > 0 ? Math.max(...oAtks.map(m => m.atk)) : 0;
+    const canKillMe = oBestAtk > 0 && (myMaxDef === 0 || oBestAtk > myMaxDef);
+    const threatScore = canKillMe ? (o.energy + 1) * (oBestAtk / 10) : 0;
+
+    // Recent behavior from tracked history
+    const hist = memory.opponentMoves.get(o.id) || [];
+    const recentAtkFreq = hist.length > 0
+      ? hist.slice(-3).filter(mid => { const m = getMoveById(mid); return m && m.atk > 0; }).length / Math.min(3, hist.length)
+      : 0.3;
+    const recentDefFreq = hist.length > 0
+      ? hist.slice(-3).filter(mid => { const m = getMoveById(mid); return m && (m.def > 0 || m?.type === 'special_defense'); }).length / Math.min(3, hist.length)
+      : 0.2;
+
+    if (killScore > bestKillScore) { bestKillScore = killScore; }
+    const adjThreat = threatScore * (0.5 + recentAtkFreq);
+    if (adjThreat > bestThreatScore) { bestThreatScore = adjThreat; scanOpp = o; }
+  }
+
+  // Priority: threat > opportunity > default
+  if (bestThreatScore > 0) {
+    threatLevel = 1; // someone can kill me → focus defense
+  } else if (bestKillScore > 0) {
+    threatLevel = 2; // I can kill someone → focus attack
+    // Find most vulnerable target
+    let bestVuln = Infinity;
+    for (const o of others) {
+      const oDefs = getMovesByLevel(o.level).filter(m => o.energy >= m.cost && (m.def > 0 || m.type === 'special_defense'));
+      const oMaxDef = oDefs.length > 0 ? Math.max(...oDefs.map(m => m.def)) : 0;
+      const myBestAtk = myAtks.length > 0 ? Math.max(...myAtks.map(m => m.atk)) : 0;
+      if (myBestAtk > oMaxDef && o.energy < bestVuln) {
+        bestVuln = o.energy;
+        scanOpp = o;
+      }
+    }
+  } else if (others.length > 0) {
+    // Default: focus on lowest energy opponent
+    const minE = Math.min(...others.map(o => o.energy));
+    scanOpp = randPick(others.filter(o => o.energy === minE));
+  }
+
+  const opp = scanOpp;
 
   const oppAvailable = getMovesByLevel(opp.level).filter(m => opp.energy >= m.cost);
   if (oppAvailable.length === 0) {
@@ -373,10 +428,17 @@ function trivialBot(
           round: 2,
         };
         totalScore += mctsEvalState(nextState)
-          + mctsSimulate(nextState, bot.level, opp.level, 2, personality, conservative) * 0.5;
+          + mctsSimulate(nextState, bot.level, opp.level, 2, personality, conservative, threatLevel, others.length > 1) * 0.5;
       }
     }
     scores.push({ move: myMove, score: totalScore / MCTS_SIMULATIONS });
+  }
+
+  // Multiplayer caution: no kill window + 2+ opponents → penalize reckless attacks
+  if (threatLevel === 0 && others.length > 1) {
+    for (const s of scores) {
+      if (s.move.atk > 0) s.score -= 250; // heavy penalty for attacking into multiplayer
+    }
   }
 
   scores.sort((a, b) => b.score - a.score);

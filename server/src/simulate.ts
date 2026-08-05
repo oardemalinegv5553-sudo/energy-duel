@@ -472,7 +472,7 @@ function parseMultiArgs(): MultiConfig {
   };
 }
 
-function runMultiplayer(config: MultiConfig) {
+async function runMultiplayer(config: MultiConfig) {
   const label = config.bots.map(b => botName(b).charAt(0)).join(',');
   console.log(`\n${'═'.repeat(62)}`);
   console.log(`  多人混战  ${config.bots.map((b,i) => `${botName(b)}${i+1}`).join(' vs ')}  Lv.${config.level}  ×${config.games}局`);
@@ -480,13 +480,13 @@ function runMultiplayer(config: MultiConfig) {
 
   for (let g = 1; g <= config.games; g++) {
     let gameOverData: any = null;
-    let lastResolution: RoundResolution | null = null;
 
+    const allRounds: { round: number; res: RoundResolution }[] = [];
     const mockIo = {
       to: (_room: string) => ({
         emit: (event: string, data: any) => {
           if (event === 'phase_change' && data.resolution) {
-            lastResolution = data.resolution as RoundResolution;
+            allRounds.push({ round: data.state?.round || 0, res: data.resolution });
           }
           if (event === 'game_over') {
             gameOverData = data;
@@ -505,18 +505,11 @@ function runMultiplayer(config: MultiConfig) {
       b.level = config.level;
       bots.push(b);
     }
-
-    // Collect per-round resolutions for verbose output
-    const allRounds: { round: number; res: RoundResolution }[] = [];
-
     const startTime = Date.now();
     engine.startGame(room);
-    // Capture first round's resolution
-    if (lastResolution) {
-      allRounds.push({ round: room.round, res: lastResolution as RoundResolution });
-    }
+    await new Promise(r => setTimeout(r, 0)); // flush async startThinkingPhase
 
-    // Advance game loop
+    // Advance game loop (await because startThinkingPhase is async)
     while (room.phase !== 'finished' && room.round < MAX_ROUNDS) {
       room.clearTimer();
       const aliveAfter = room.getAlivePlayers();
@@ -525,16 +518,13 @@ function runMultiplayer(config: MultiConfig) {
         engine.endGame(room);
         break;
       }
-      const res = lastResolution as RoundResolution | null;
-      const hadDeaths = (res?.deaths?.length ?? 0) > 0;
+      const lastRes = allRounds[allRounds.length - 1]?.res;
+      const hadDeaths = (lastRes?.deaths?.length ?? 0) > 0;
       if (hadDeaths) {
         for (const p of aliveAfter) p.energy = 0;
       }
       room.round++;
-      engine.startThinkingPhase(room);
-      if (lastResolution) {
-        allRounds.push({ round: room.round, res: lastResolution as RoundResolution });
-      }
+      await engine.startThinkingPhase(room);
     }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
