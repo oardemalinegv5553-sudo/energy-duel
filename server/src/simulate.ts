@@ -442,6 +442,7 @@ interface MultiConfig {
   level: number;
   games: number;
   verbose: boolean;
+  session: boolean;
 }
 
 function parseMultiArgs(): MultiConfig {
@@ -464,10 +465,13 @@ function parseMultiArgs(): MultiConfig {
     bots = Array(n).fill(bt);
   }
 
+  const session = has('--session');
+  const sessionGames = session ? parseInt(get('--session') || '0', 10) : 0;
   return {
     bots,
+    session,
     level: parseInt(get('--level') || '1', 10),
-    games: parseInt(get('--games') || '5', 10),
+    games: parseInt(get('--games') || (sessionGames > 0 ? String(sessionGames) : '5'), 10),
     verbose: has('--verbose') || has('-v'),
   };
 }
@@ -478,8 +482,19 @@ async function runMultiplayer(config: MultiConfig) {
   console.log(`  多人混战  ${config.bots.map((b,i) => `${botName(b)}${i+1}`).join(' vs ')}  Lv.${config.level}  ×${config.games}局`);
   console.log(`${'═'.repeat(62)}`);
 
+  // Session: reuse room across games for level progression
+  const room = new GameRoom('SIM', 'multi');
+  room.initialLevel = config.level;
+  const bots: ReturnType<typeof room.addBot>[] = [];
+  for (let i = 0; i < config.bots.length; i++) {
+    const b = room.addBot(`${botName(config.bots[i])}${i + 1}`, config.bots[i]);
+    b.level = config.level;
+    bots.push(b);
+  }
+
   for (let g = 1; g <= config.games; g++) {
     let gameOverData: any = null;
+    if (g > 1) room.resetForNewGame();
 
     const allRounds: { round: number; res: RoundResolution }[] = [];
     const mockIo = {
@@ -496,15 +511,6 @@ async function runMultiplayer(config: MultiConfig) {
     } as any;
 
     const engine = new GameEngine(mockIo);
-    const room = new GameRoom('SIM', 'multi');
-    room.initialLevel = config.level;
-
-    const bots: ReturnType<typeof room.addBot>[] = [];
-    for (let i = 0; i < config.bots.length; i++) {
-      const b = room.addBot(`${botName(config.bots[i])}${i + 1}`, config.bots[i]);
-      b.level = config.level;
-      bots.push(b);
-    }
     const startTime = Date.now();
     engine.startGame(room);
     await new Promise(r => setTimeout(r, 0)); // flush async startThinkingPhase
@@ -533,7 +539,8 @@ async function runMultiplayer(config: MultiConfig) {
     if (gameOverData) {
       const rankings = gameOverData.rankings;
       const winner = rankings?.[0]?.nickname || '?';
-      console.log(`\n  ── 第 ${g} 局 ──  胜者: ${winner}  (${room.round}回合, ${elapsed}s)`);
+      const lvStr = config.session ? '  ' + bots.map(b => `${b.nickname}:Lv${b.level}`).join(' ') : '';
+      console.log(`\n  ── 第 ${g} 局 ──  胜者: ${winner}  (${room.round}回合, ${elapsed}s)${lvStr}`);
       if (rankings) {
         for (const r of rankings) {
           const stats = gameOverData.fairStats?.[r.playerId];
