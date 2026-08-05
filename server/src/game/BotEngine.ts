@@ -158,6 +158,15 @@ function mctsSmartPick(
   const pCharge  = personality === 'aggressive' ? 0.50 : personality === 'charger' ? 0.95 : 0.80;
   let chargeBias = personality === 'aggressive' ? 5 : personality === 'charger' ? 35 : 20;
   if (conservative) chargeBias = Math.floor(chargeBias * 1.5); // global stalemate → charge harder
+  // Level-based strategy: Lv1-2(no AOE)→charge more; Lv3-4(weak AOE)→attack more;
+  // Lv5+(抿 AOE)→attack drops, charge rises with level
+  const lv = player.level;
+  if (lv <= 2) { pAttack *= 0.7; chargeBias = Math.floor(chargeBias * 1.3); }
+  else if (lv <= 4) { pAttack *= 1.3; }
+  else if (lv >= 5) {
+    pAttack *= 0.85 + lv * 0.008;  // slowly rises: Lv5:0.89, Lv10:0.93, Lv17:0.98
+    chargeBias = Math.floor(chargeBias * (0.85 + lv * 0.015)); // Lv5:0.93, Lv10:1.0, Lv17:1.1
+  }
 
   // Priority 1: Opponent threat high → defend (personality modulates probability)
   if (oppAtkRate > 0.25 && defenses.length > 0 && Math.random() < pDefend) {
@@ -437,7 +446,18 @@ function trivialBot(
   // Multiplayer caution: no kill window + 2+ opponents → penalize reckless attacks
   if (threatLevel === 0 && others.length > 1) {
     for (const s of scores) {
-      if (s.move.atk > 0) s.score -= 250; // heavy penalty for attacking into multiplayer
+      if (s.move.atk > 0) s.score -= 250;
+    }
+  }
+
+  // Cumulative trigger encouragement (Lv.11+): prefer 莲花/金牛/海王 to build toward
+  // their powerful triggered versions (莲花宝座/金牛漩涡顶/海王震天)
+  const CUMULATIVE_BASES = ['lianhua', 'jinniu', 'haiwang'];
+  const progress = bot.cumulativeProgress || {};
+  for (const s of scores) {
+    if (CUMULATIVE_BASES.includes(s.move.id)) {
+      const current = progress[s.move.id] || 0;
+      s.score += (3 - current) * 15; // more bonus when fewer uses (encourage starting early)
     }
   }
 
