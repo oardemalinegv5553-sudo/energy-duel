@@ -54,7 +54,14 @@ export class GameEngine {
     this.io.to(room.roomCode).emit('game_started', { state });
 
     // Begin first thinking phase
-    this.startThinkingPhase(room);
+    this.beginThinking(room);
+  }
+
+  /** Fire-and-forget startThinkingPhase with error logging (async because of LLM bots) */
+  private beginThinking(room: GameRoom): void {
+    this.startThinkingPhase(room).catch(err => {
+      console.error(`[game] startThinkingPhase failed in room ${room.roomCode}:`, err);
+    });
   }
 
   /** Apply §3.4 level catch-up: if max - min > 5, lowest levels up */
@@ -104,7 +111,11 @@ export class GameEngine {
     const advanced = this.checkAllSubmitted(room);
     if (!advanced) {
       room.timer = setTimeout(() => {
-        this.onThinkingTimeout(room);
+        try {
+          this.onThinkingTimeout(room);
+        } catch (err) {
+          console.error(`[game] onThinkingTimeout failed in room ${room.roomCode}:`, err);
+        }
       }, THINKING_TIME);
     }
   }
@@ -360,80 +371,84 @@ export class GameEngine {
     this.io.to(room.roomCode).emit('phase_change', { phase: 'result', state, resolution });
 
     room.timer = setTimeout(() => {
-      if (room.roomType === 'team') {
-        // Team mode: game ends when one team is wiped out
-        const teamsAlive = new Set(aliveAfter.map(p => p.team));
-        if (teamsAlive.size <= 1) {
-          // One team eliminated → winning team (including dead) all level up
-          // Both teams dead → no one levels up
+      try {
+        if (room.roomType === 'team') {
+          // Team mode: game ends when one team is wiped out
+          const teamsAlive = new Set(aliveAfter.map(p => p.team));
+          if (teamsAlive.size <= 1) {
+            // One team eliminated → winning team (including dead) all level up
+            // Both teams dead → no one levels up
+            if (aliveAfter.length > 0) {
+              const winTeam = aliveAfter[0].team!;
+              room.massDeathLevelUps = [];
+              const winners = room.getAllPlayers().filter(p => p.team === winTeam);
+              for (const p of winners) {
+                room.massDeathLevelUps.push({
+                  playerId: p.id, nickname: p.nickname,
+                  oldLevel: p.level, newLevel: p.level + 1,
+                });
+                p.level += 1;
+              }
+            } else {
+              room.massDeathLevelUps = [];
+            }
+            room.massDeathTriggered = true;
+            this.endGame(room);
+          } else {
+            if (hadDeaths) {
+              for (const p of aliveAfter) {
+                p.energy = 0;
+                p.buffs = [];
+                p.cumulativeProgress = {};
+              }
+              room.cumulativeCounters = {};
+            }
+            room.round++;
+            this.beginThinking(room);
+          }
+        } else if (room.roomType === 'fair') {
+          // Fair mode: per-round level-ups already applied, just check end condition
+          if (aliveAfter.length <= upgradeSlots) {
+            room.massDeathLevelUps = []; // no extra level-ups
+            room.massDeathTriggered = true;
+            this.endGame(room);
+          } else {
+            if (hadDeaths) {
+              for (const p of aliveAfter) {
+                p.energy = 0;
+                p.buffs = [];
+                p.cumulativeProgress = {};
+              }
+              room.cumulativeCounters = {};
+            }
+            room.round++;
+            this.beginThinking(room);
+          }
+        } else if (aliveAfter.length <= upgradeSlots) {
+          // 剩余人数 ≤ 升级名额 → 游戏结束，幸存者直接升级
           if (aliveAfter.length > 0) {
-            const winTeam = aliveAfter[0].team!;
             room.massDeathLevelUps = [];
-            const winners = room.getAllPlayers().filter(p => p.team === winTeam);
-            for (const p of winners) {
+            for (const p of aliveAfter) {
               room.massDeathLevelUps.push({
                 playerId: p.id, nickname: p.nickname,
                 oldLevel: p.level, newLevel: p.level + 1,
               });
               p.level += 1;
             }
-          } else {
-            room.massDeathLevelUps = [];
+            room.massDeathTriggered = true;
           }
-          room.massDeathTriggered = true;
           this.endGame(room);
         } else {
           if (hadDeaths) {
             for (const p of aliveAfter) {
               p.energy = 0;
-              p.buffs = [];
-              p.cumulativeProgress = {};
             }
-            room.cumulativeCounters = {};
           }
           room.round++;
-          this.startThinkingPhase(room);
+          this.beginThinking(room);
         }
-      } else if (room.roomType === 'fair') {
-        // Fair mode: per-round level-ups already applied, just check end condition
-        if (aliveAfter.length <= upgradeSlots) {
-          room.massDeathLevelUps = []; // no extra level-ups
-          room.massDeathTriggered = true;
-          this.endGame(room);
-        } else {
-          if (hadDeaths) {
-            for (const p of aliveAfter) {
-              p.energy = 0;
-              p.buffs = [];
-              p.cumulativeProgress = {};
-            }
-            room.cumulativeCounters = {};
-          }
-          room.round++;
-          this.startThinkingPhase(room);
-        }
-      } else if (aliveAfter.length <= upgradeSlots) {
-        // 剩余人数 ≤ 升级名额 → 游戏结束，幸存者直接升级
-        if (aliveAfter.length > 0) {
-          room.massDeathLevelUps = [];
-          for (const p of aliveAfter) {
-            room.massDeathLevelUps.push({
-              playerId: p.id, nickname: p.nickname,
-              oldLevel: p.level, newLevel: p.level + 1,
-            });
-            p.level += 1;
-          }
-          room.massDeathTriggered = true;
-        }
-        this.endGame(room);
-      } else {
-        if (hadDeaths) {
-          for (const p of aliveAfter) {
-            p.energy = 0;
-          }
-        }
-        room.round++;
-        this.startThinkingPhase(room);
+      } catch (err) {
+        console.error(`[game] result→next-round transition failed in room ${room.roomCode}:`, err);
       }
     }, RESULT_TIME);
   }

@@ -1,6 +1,9 @@
-import { randomBytes, pbkdf2Sync, timingSafeEqual } from 'crypto';
+import { randomBytes, pbkdf2, timingSafeEqual } from 'crypto';
+import { promisify } from 'util';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import path from 'path';
+
+const pbkdf2Async = promisify(pbkdf2);
 
 // ---- Types ----
 
@@ -48,17 +51,25 @@ const MIN_PASSWORD_LEN = 4;
 export class AuthManager {
   private dbPath: string;
   private sessions: Map<string, Session> = new Map();
+  private dbCorrupted = false;
 
   constructor(dbPath: string) {
     this.dbPath = dbPath;
     this.ensureDb();
+    // Periodically purge expired sessions so the map can't grow unboundedly
+    setInterval(() => {
+      const now = Date.now();
+      for (const [token, s] of this.sessions) {
+        if (now - s.createdAt > TOKEN_TTL_MS) this.sessions.delete(token);
+      }
+    }, 60 * 60 * 1000).unref();
   }
 
   // ================================================================
   // Public API
   // ================================================================
 
-  register(username: string, password: string, _ip: string): AuthResult {
+  async register(username: string, password: string, _ip: string): Promise<AuthResult> {
     // Validate inputs
     const usernameTrimmed = username.trim();
     if (!USERNAME_REGEX.test(usernameTrimmed)) {
@@ -68,7 +79,12 @@ export class AuthManager {
       return { success: false, error: '密码至少需要4个字符' };
     }
 
-    const db = this.loadDb();
+    let db: UserDatabase;
+    try {
+      db = this.loadDb();
+    } catch {
+      return { success: false, error: '账号数据异常，请联系管理员' };
+    }
 
     // Check username uniqueness (case-insensitive)
     const existing = db.accounts.find(
@@ -80,7 +96,7 @@ export class AuthManager {
 
     // Create account
     const accountId = this.generateAccountId(db.nextAccountId);
-    const passwordHash = this.hashPassword(password);
+    const passwordHash = await this.hashPassword(password);
     const now = new Date().toISOString();
 
     const record: UserRecord = {
@@ -108,8 +124,13 @@ export class AuthManager {
     return { success: true, accountId, username: usernameTrimmed, token };
   }
 
-  login(identifier: string, password: string): AuthResult {
-    const db = this.loadDb();
+  async login(identifier: string, password: string): Promise<AuthResult> {
+    let db: UserDatabase;
+    try {
+      db = this.loadDb();
+    } catch {
+      return { success: false, error: '账号数据异常，请联系管理员' };
+    }
     const idTrimmed = identifier.trim();
 
     // Match by accountId first, then by username (case-insensitive)
@@ -124,7 +145,7 @@ export class AuthManager {
       return { success: false, error: '账号或密码错误' };
     }
 
-    if (!this.verifyPassword(password, user.passwordHash)) {
+    if (!(await this.verifyPassword(password, user.passwordHash))) {
       return { success: false, error: '账号或密码错误' };
     }
 
@@ -177,19 +198,19 @@ export class AuthManager {
   // Internal
   // ================================================================
 
-  private hashPassword(password: string): string {
+  private async hashPassword(password: string): Promise<string> {
     const salt = randomBytes(SALT_BYTES).toString('hex');
-    const hash = pbkdf2Sync(password, salt, HASH_ITERATIONS, KEY_LENGTH, DIGEST).toString('hex');
+    const hash = (await pbkdf2Async(password, salt, HASH_ITERATIONS, KEY_LENGTH, DIGEST)).toString('hex');
     return `pbkdf2$${HASH_ITERATIONS}$${salt}$${hash}`;
   }
 
-  private verifyPassword(password: string, stored: string): boolean {
+  private async verifyPassword(password: string, stored: string): Promise<boolean> {
     const parts = stored.split('$');
     if (parts.length !== 4 || parts[0] !== 'pbkdf2') return false;
     const iterations = parseInt(parts[1], 10);
     const salt = parts[2];
     const storedHash = parts[3];
-    const computedHash = pbkdf2Sync(password, salt, iterations, KEY_LENGTH, DIGEST).toString('hex');
+    const computedHash = (await pbkdf2Async(password, salt, iterations, KEY_LENGTH, DIGEST)).toString('hex');
     try {
       return timingSafeEqual(Buffer.from(computedHash), Buffer.from(storedHash));
     } catch {
@@ -228,14 +249,21 @@ export class AuthManager {
   private loadDb(): UserDatabase {
     try {
       const raw = readFileSync(this.dbPath, 'utf-8');
-      return JSON.parse(raw) as UserDatabase;
+      const db = JSON.parse(raw) as UserDatabase;
+      this.dbCorrupted = false;
+      return db;
     } catch (e) {
-      console.error('[auth] Failed to read user database, starting fresh:', e);
-      return { accounts: [], nextAccountId: 1 };
+      // Never fall back to an empty db — a later saveDb would wipe all accounts
+      this.dbCorrupted = true;
+      console.error('[auth] Failed to read user database:', e);
+      throw e;
     }
   }
 
   private saveDb(db: UserDatabase): void {
+    if (this.dbCorrupted) {
+      throw new Error('[auth] Refusing to overwrite a corrupted user database');
+    }
     writeFileSync(this.dbPath, JSON.stringify(db, null, 2), 'utf-8');
   }
 }

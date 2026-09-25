@@ -157,10 +157,10 @@ export interface GameState {
 
 // ---- Socket Events ----
 export interface ClientToServerEvents {
-  create_room: (data: { nickname: string; roomType: RoomType; initialLevel?: number }, ack: (res: { roomCode: string; playerId: string }) => void) => void;
-  join_room: (data: { nickname: string; roomCode: string; team?: number }, ack: (res: { success: boolean; error?: string; playerId?: string; roomType?: RoomType }) => void) => void;
+  create_room: (data: { nickname: string; roomType: RoomType; initialLevel?: number }, ack: (res: { roomCode: string; playerId: string; reconnectToken: string }) => void) => void;
+  join_room: (data: { nickname: string; roomCode: string; team?: number }, ack: (res: { success: boolean; error?: string; playerId?: string; roomType?: RoomType; reconnectToken?: string }) => void) => void;
   leave_room: () => void;
-  rejoin_room: (data: { roomCode: string; playerId: string }, ack: (res: { success: boolean; error?: string; playerId?: string; roomType?: RoomType }) => void) => void;
+  rejoin_room: (data: { roomCode: string; playerId: string; reconnectToken?: string }, ack: (res: { success: boolean; error?: string; playerId?: string; roomType?: RoomType; reconnectToken?: string }) => void) => void;
   switch_team: (data?: { playerId?: string }) => void;
   start_game: () => void;
   add_bot: (data: { level: BotLevel }) => void;

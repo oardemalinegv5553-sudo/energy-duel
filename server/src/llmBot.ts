@@ -5,6 +5,54 @@
 
 import { PlayerState, MoveDef, LLMConfig } from '../../shared/types';
 import { getMovesByLevel, getMoveById } from './data/moves';
+import dns from 'dns';
+
+// ================================================================
+// Endpoint validation (SSRF protection)
+// ================================================================
+
+function isPrivateIp(ip: string): boolean {
+  const m = ip.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (m) {
+    const a = +m[1], b = +m[2];
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;            // link-local (cloud metadata!)
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;  // CGNAT
+    return false;
+  }
+  const lower = ip.toLowerCase();
+  return lower === '::1' || lower === '::' || lower.startsWith('fe80') ||
+         lower.startsWith('fc') || lower.startsWith('fd') ||
+         lower === 'localhost' || lower.endsWith('.local') || lower.endsWith('.internal');
+}
+
+/** Returns an error message, or null if the endpoint is safe to call */
+export async function validateLLMEndpoint(endpoint: string): Promise<string | null> {
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return 'endpoint 不是合法的 URL';
+  }
+  if (url.protocol !== 'https:') {
+    return '仅支持 https:// 的 endpoint（防止 API Key 明文传输）';
+  }
+  const host = url.hostname.toLowerCase();
+  if (isPrivateIp(host)) {
+    return 'endpoint 不能指向内网/本机地址';
+  }
+  try {
+    const { address } = await dns.promises.lookup(host);
+    if (isPrivateIp(address)) {
+      return 'endpoint 域名解析到内网地址，已拒绝';
+    }
+  } catch {
+    return 'endpoint 域名无法解析';
+  }
+  return null;
+}
 
 // ================================================================
 // System Prompt（固定，含全部规则 + 37 招完整表）
@@ -224,6 +272,7 @@ async function callLLM(config: LLMConfig, systemPrompt: string, userMessage: str
       temperature: 0.3,
       max_tokens: 20,
     }),
+    signal: AbortSignal.timeout(8000),  // abort instead of racing — actually cancels the request
   });
 
   if (!response.ok) {
@@ -276,12 +325,7 @@ export async function getLLMBotMove(
   const userMessage = buildUserMessage(bot, others, affordable, round, bot.cumulativeProgress);
 
   try {
-    const raw = await Promise.race([
-      callLLM(config, SYSTEM_PROMPT, userMessage),
-      new Promise<string>((_, reject) =>
-        setTimeout(() => reject(new Error('LLM timeout')), 8000)
-      ),
-    ]);
+    const raw = await callLLM(config, SYSTEM_PROMPT, userMessage);
 
     const move = parseMoveName(raw, affordable);
     if (move) {

@@ -66,7 +66,7 @@ export default function App() {
       // Try to rejoin room after refresh
       const saved = getSavedRoom();
       if (saved && !roomCode) {
-        socket.emit('rejoin_room', { roomCode: saved.roomCode, playerId: saved.playerId }, (res) => {
+        socket.emit('rejoin_room', { roomCode: saved.roomCode, playerId: saved.playerId, reconnectToken: saved.reconnectToken }, (res) => {
           if (res.success) {
             console.log('[rejoin] restored to room', saved.roomCode);
             setRoomCode(saved.roomCode);
@@ -237,11 +237,11 @@ export default function App() {
         <Lobby
           socket={socket}
           onError={setError}
-          onRoomCreated={(code, pid, rtype) => {
+          onRoomCreated={(code, pid, rtype, rtoken) => {
             setRoomCode(code);
             setPlayerId(pid);
             setRoomType(rtype);
-            saveRoomState({ roomCode: code, playerId: pid, roomType: rtype });
+            saveRoomState({ roomCode: code, playerId: pid, roomType: rtype, reconnectToken: rtoken });
             setView('waiting');
           }}
           isLoggedIn={!!authAccountId}

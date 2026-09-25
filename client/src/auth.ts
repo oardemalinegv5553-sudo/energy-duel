@@ -42,6 +42,7 @@ export interface SavedRoom {
   roomCode: string;
   playerId: string;
   roomType: string;
+  reconnectToken?: string;
 }
 
 export function saveRoomState(state: SavedRoom): void {

@@ -1,10 +1,70 @@
 import { Server as HTTPServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
+import { randomBytes } from 'crypto';
 import { RoomManager } from './room/RoomManager';
 import { GameEngine } from './game/GameEngine';
 import { GameRoom } from './room/GameRoom';
-import { ClientToServerEvents, ServerToClientEvents, LLMConfig } from '../../shared/types';
+import { ClientToServerEvents, ServerToClientEvents, LLMConfig, BotLevel } from '../../shared/types';
 import { AuthManager } from './auth/AuthManager';
+import { validateLLMEndpoint } from './llmBot';
+
+// ---- Input validation helpers ----
+
+function str(v: unknown, maxLen = 100): string | null {
+  return typeof v === 'string' && v.length > 0 && v.length <= maxLen ? v : null;
+}
+
+function sanitizeNickname(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const n = v.trim().replace(/[\x00-\x1f\x7f]/g, '');
+  return n.length >= 1 && n.length <= 16 ? n : null;
+}
+
+function strArray(v: unknown, maxLen: number): string[] | null {
+  if (!Array.isArray(v) || v.length > maxLen) return null;
+  if (!v.every(x => typeof x === 'string' && x.length <= 64)) return null;
+  return v as string[];
+}
+
+const BOT_LEVELS: BotLevel[] = ['easy', 'normal', 'hard', 'trivial', 'llm'];
+const ROOM_TYPES = ['duo', 'multi', 'team', 'fair'];
+
+/** Wrap a socket handler so bad payloads / bugs can't crash the process */
+function guarded<T extends (...args: any[]) => any>(name: string, fn: T): T {
+  return ((...args: any[]) => {
+    try {
+      const result = fn(...args);
+      if (result instanceof Promise) {
+        result.catch(err => console.error(`[socket] handler "${name}" rejected:`, err));
+      }
+    } catch (err) {
+      console.error(`[socket] handler "${name}" threw:`, err);
+    }
+  }) as T;
+}
+
+/** Simple per-socket sliding-window rate limiter */
+class RateLimiter {
+  private buckets = new Map<string, number[]>();
+
+  allow(key: string, limit: number, windowMs: number): boolean {
+    const now = Date.now();
+    const arr = (this.buckets.get(key) || []).filter(t => now - t < windowMs);
+    if (arr.length >= limit) {
+      this.buckets.set(key, arr);
+      return false;
+    }
+    arr.push(now);
+    this.buckets.set(key, arr);
+    return true;
+  }
+
+  clear(key: string): void {
+    this.buckets.delete(key);
+  }
+}
+
+const DISCONNECT_GRACE_MS = 10 * 60 * 1000;  // mid-game rejoin window
 
 export function createSocketServer(httpServer: HTTPServer, authManager: AuthManager) {
   const io = new SocketIOServer<ClientToServerEvents, ServerToClientEvents>(httpServer, {
@@ -29,6 +89,7 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
 
   const roomManager = new RoomManager();
   const gameEngine = new GameEngine(io);
+  const rateLimiter = new RateLimiter();
 
   // Track which socket is in which room and which player
   const socketRooms = new Map<string, { roomCode: string; playerId: string; accountId?: string; nickname: string }>();
@@ -46,23 +107,40 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
     socket.emit('auth_info', { accountId: accountId || null });
 
     // ---- List Rooms ----
-    socket.on('list_rooms', (ack) => {
-      ack(roomManager.getRoomSummaries());
-    });
+    socket.on('list_rooms', guarded('list_rooms', (ack) => {
+      if (typeof ack === 'function') ack(roomManager.getRoomSummaries());
+    }));
 
     // ---- Room Creation ----
-    socket.on('create_room', (data, ack) => {
-      const room = roomManager.createRoom(data.roomType || 'duo', data.initialLevel || 1);
-      const playerTeam = data.roomType === 'team' ? 0 : undefined;
-      const player = room.addPlayer(data.nickname, playerTeam);
+    socket.on('create_room', guarded('create_room', (data, ack) => {
+      if (!data || typeof data !== 'object') return;
+      if (!rateLimiter.allow(socket.id, 5, 60_000)) {
+        if (typeof ack === 'function') ack({ roomCode: '', playerId: '', reconnectToken: '' });
+        socket.emit('error', { message: '操作过于频繁，请稍后再试' });
+        return;
+      }
+      const nickname = sanitizeNickname(data.nickname);
+      if (!nickname) {
+        socket.emit('error', { message: '昵称需为 1-16 个字符' });
+        return;
+      }
+      const roomType = ROOM_TYPES.includes(data.roomType) ? data.roomType : 'duo';
+      const initialLevel = typeof data.initialLevel === 'number' && Number.isFinite(data.initialLevel)
+        ? data.initialLevel : 1;
+
+      const room = roomManager.createRoom(roomType, initialLevel);
+      const playerTeam = roomType === 'team' ? 0 : undefined;
+      const player = room.addPlayer(nickname, playerTeam);
+      const reconnectToken = randomBytes(16).toString('hex');
+      room.reconnectTokens.set(player.id, reconnectToken);
 
       socket.join(room.roomCode);
       socketRooms.set(socket.id, {
         roomCode: room.roomCode, playerId: player.id,
-        accountId: (socket as any).accountId, nickname: data.nickname,
+        accountId: (socket as any).accountId, nickname,
       });
 
-      ack({ roomCode: room.roomCode, playerId: player.id });
+      if (typeof ack === 'function') ack({ roomCode: room.roomCode, playerId: player.id, reconnectToken });
 
       io.to(room.roomCode).emit('player_list', {
         players: room.getPlayerInfos(),
@@ -70,26 +148,35 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
       });
       broadcastRoomList();
 
-      console.log(`[room] ${data.nickname}${(socket as any).accountId ? ` [${(socket as any).accountId}]` : ''} created ${room.roomType} room ${room.roomCode} (initial Lv.${room.initialLevel})`);
-    });
+      console.log(`[room] ${nickname}${(socket as any).accountId ? ` [${(socket as any).accountId}]` : ''} created ${room.roomType} room ${room.roomCode} (initial Lv.${room.initialLevel})`);
+    }));
 
     // ---- Join Room ----
-    socket.on('join_room', (data, ack) => {
-      const room = roomManager.getRoom(data.roomCode);
+    socket.on('join_room', guarded('join_room', (data, ack) => {
+      if (!data || typeof data !== 'object') return;
+      const fail = (error: string) => { if (typeof ack === 'function') ack({ success: false, error }); };
+
+      const roomCode = str(data.roomCode, 8);
+      const nickname = sanitizeNickname(data.nickname);
+      if (!roomCode || !nickname) {
+        fail(!nickname ? '昵称需为 1-16 个字符' : '房间号无效');
+        return;
+      }
+      const room = roomManager.getRoom(roomCode.toUpperCase());
       if (!room) {
-        ack({ success: false, error: '房间不存在' });
+        fail('房间不存在');
         return;
       }
       // Always allow join unless full
       const isGameInProgress = room.phase !== 'waiting';
       if (room.players.size >= room.maxPlayers) {
-        ack({ success: false, error: `房间已满（最多 ${room.maxPlayers} 人）` });
+        fail(`房间已满（最多 ${room.maxPlayers} 人）`);
         return;
       }
       // Team mode: auto-assign to smaller team if not specified
       let joinTeam: number | undefined;
       if (room.roomType === 'team') {
-        if (data.team !== undefined) {
+        if (data.team === 0 || data.team === 1) {
           joinTeam = data.team;
         } else {
           const red = room.getAllPlayers().filter(p => p.team === 0).length;
@@ -98,13 +185,15 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
         }
       }
       // Check duplicate nickname
-      const exists = room.getAllPlayers().some(p => p.nickname === data.nickname);
+      const exists = room.getAllPlayers().some(p => p.nickname === nickname);
       if (exists) {
-        ack({ success: false, error: '昵称已被使用' });
+        fail('昵称已被使用');
         return;
       }
 
-      const player = room.addPlayer(data.nickname, joinTeam);
+      const player = room.addPlayer(nickname, joinTeam);
+      const reconnectToken = randomBytes(16).toString('hex');
+      room.reconnectTokens.set(player.id, reconnectToken);
 
       // If joining mid-game, enter as spectator (can't play until next game)
       if (isGameInProgress) {
@@ -131,10 +220,10 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
       socket.join(room.roomCode);
       socketRooms.set(socket.id, {
         roomCode: room.roomCode, playerId: player.id,
-        accountId: acctId, nickname: data.nickname,
+        accountId: acctId, nickname,
       });
 
-      ack({ success: true, playerId: player.id, roomType: room.roomType });
+      if (typeof ack === 'function') ack({ success: true, playerId: player.id, roomType: room.roomType, reconnectToken });
 
       // Send chat history to the new player
       if (room.chatMessages.length > 0) {
@@ -154,15 +243,23 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
 
       broadcastRoomList();
 
-      console.log(`[room] ${data.nickname} joined room ${room.roomCode}`);
-    });
+      console.log(`[room] ${nickname} joined room ${room.roomCode}`);
+    }));
 
     // ---- Rejoin Room (after refresh/disconnect) ----
-    socket.on('rejoin_room', (data, ack) => {
-      const { roomCode, playerId } = data;
+    socket.on('rejoin_room', guarded('rejoin_room', (data, ack) => {
+      if (!data || typeof data !== 'object') return;
+      const fail = (error: string) => { if (typeof ack === 'function') ack({ success: false, error }); };
+
+      const roomCode = str(data.roomCode, 8);
+      const playerId = str(data.playerId, 64);
+      if (!roomCode || !playerId) {
+        fail('参数无效');
+        return;
+      }
       const room = roomManager.getRoom(roomCode);
       if (!room) {
-        ack({ success: false, error: '房间不存在' });
+        fail('房间不存在');
         return;
       }
 
@@ -170,7 +267,14 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
       const playerExists = room.players.has(playerId);
       const timer = room.disconnectedPlayers.get(playerId);
       if (!playerExists && !timer) {
-        ack({ success: false, error: '已退出房间，请重新加入' });
+        fail('已退出房间，请重新加入');
+        return;
+      }
+
+      // Verify rejoin credential — playerId alone is broadcast to the whole room
+      const expectedToken = room.reconnectTokens.get(playerId);
+      if (!expectedToken || expectedToken !== data.reconnectToken) {
+        fail('重连凭证无效，请重新加入');
         return;
       }
 
@@ -189,7 +293,7 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
         nickname: p?.nickname || '',
       });
 
-      ack({ success: true, playerId, roomType: room.roomType });
+      if (typeof ack === 'function') ack({ success: true, playerId, roomType: room.roomType, reconnectToken: expectedToken });
 
       // Send chat history to rejoining player
       if (room.chatMessages.length > 0) {
@@ -208,10 +312,10 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
       }
 
       console.log(`[room] ${p?.nickname || playerId} rejoined room ${roomCode}`);
-    });
+    }));
 
     // ---- Start Game (host only) ----
-    socket.on('start_game', () => {
+    socket.on('start_game', guarded('start_game', () => {
       const info = socketRooms.get(socket.id);
       if (!info) return;
       const room = roomManager.getRoom(info.roomCode);
@@ -239,10 +343,10 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
       gameEngine.startGame(room);
       broadcastRoomList();
       console.log(`[game] Room ${room.roomCode} started with ${room.players.size} players`);
-    });
+    }));
 
     // ---- Switch Team (team mode only, before game starts) ----
-    socket.on('switch_team', (data) => {
+    socket.on('switch_team', guarded('switch_team', (data) => {
       const info = socketRooms.get(socket.id);
       if (!info) return;
       const room = roomManager.getRoom(info.roomCode);
@@ -250,7 +354,7 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
       if (room.phase !== 'waiting') return;
 
       // Host can switch anyone (including bots); players can only switch themselves
-      const targetId = (data?.playerId && info.playerId === room.hostId) ? data.playerId : info.playerId;
+      const targetId = (data && typeof data.playerId === 'string' && info.playerId === room.hostId) ? data.playerId : info.playerId;
       const player = room.players.get(targetId);
       if (!player) return;
 
@@ -260,14 +364,17 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
         players: room.getPlayerInfos(),
         hostId: room.hostId,
       });
-    });
+    }));
 
     // ---- Add Bot (host only) ----
-    socket.on('add_bot', (data) => {
+    socket.on('add_bot', guarded('add_bot', (data) => {
+      if (!data || typeof data !== 'object') return;
+      if (!rateLimiter.allow(socket.id, 12, 60_000)) return;
       const info = socketRooms.get(socket.id);
       if (!info) return;
       const room = roomManager.getRoom(info.roomCode);
       if (!room) return;
+      if (!BOT_LEVELS.includes(data.level)) return;
       if (room.roomType === 'team' && data.level === 'easy') {
         socket.emit('error', { message: '组队模式不支持简单人机' });
         return;
@@ -294,6 +401,7 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
       // Sync LLM config from socket to room (for LLM bots)
       if (data.level === 'llm' && socketLLMConfigs.has(socket.id)) {
         room.llmConfig = socketLLMConfigs.get(socket.id);
+        room.llmConfigFrom = socket.id;
       }
       socket.join(room.roomCode);
       console.log(`[room] Bot ${bot.nickname} (${data.level}) added to ${room.roomCode}`);
@@ -302,40 +410,51 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
         players: room.getPlayerInfos(),
         hostId: room.hostId,
       });
-    });
+    }));
 
     // ---- Remove Bot (host only) ----
-    socket.on('remove_bot', (data) => {
+    socket.on('remove_bot', guarded('remove_bot', (data) => {
+      if (!data || typeof data !== 'object') return;
+      const botId = str(data.botId, 64);
+      if (!botId) return;
       const info = socketRooms.get(socket.id);
       if (!info) return;
       const room = roomManager.getRoom(info.roomCode);
       if (!room) return;
       if (room.hostId !== info.playerId) return;
       if (room.phase !== 'waiting') return;
-      const bot = room.players.get(data.botId);
+      const bot = room.players.get(botId);
       if (!bot || !bot.isBot) return;
-      room.players.delete(data.botId);
+      room.players.delete(botId);
       io.to(room.roomCode).emit('player_list', {
         players: room.getPlayerInfos(),
         hostId: room.hostId,
       });
-    });
+    }));
 
     // ---- Submit Move ----
-    socket.on('submit_move', (data) => {
+    socket.on('submit_move', guarded('submit_move', (data) => {
+      if (!data || typeof data !== 'object') return;
+      const moveId = str(data.moveId, 32);
+      const targets = strArray(data.targets, 8);
+      if (!moveId || !targets) return;
       const info = socketRooms.get(socket.id);
       if (!info) return;
       const room = roomManager.getRoom(info.roomCode);
       if (!room) return;
 
-      const ok = gameEngine.submitMove(room, info.playerId, data.moveId, data.targets);
+      const ok = gameEngine.submitMove(room, info.playerId, moveId, targets);
       if (!ok) {
         socket.emit('error', { message: '出招无效（气不足/等级不够/已出招/目标无效）' });
       }
-    });
+    }));
 
     // ---- Chat Message ----
-    socket.on('chat_message', (data) => {
+    socket.on('chat_message', guarded('chat_message', (data) => {
+      if (!data || typeof data !== 'object') return;
+      const content = str(data.content, 500);
+      if (!content) return;
+      if (!rateLimiter.allow(socket.id, 8, 5_000)) return;
       const info = socketRooms.get(socket.id);
       if (!info) return;
       const room = roomManager.getRoom(info.roomCode);
@@ -344,13 +463,13 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
       if (!player) return;
 
       // Non-team modes: force scope to 'all'
-      const scope = room.roomType === 'team' ? data.scope : 'all';
+      const scope: 'all' | 'team' = room.roomType === 'team' && data.scope === 'team' ? 'team' : 'all';
 
       const msg = {
         id: Math.random().toString(36).substring(2, 10),
         playerId: info.playerId,
         nickname: player.nickname,
-        content: data.content.slice(0, 200), // max 200 chars
+        content: content.slice(0, 200), // max 200 chars
         scope,
         timestamp: Date.now(),
       };
@@ -371,27 +490,40 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
         // Broadcast to entire room
         io.to(room.roomCode).emit('chat_broadcast', msg);
       }
-    });
+    }));
 
     // ---- LLM Config (per-socket, no room needed) ----
     const socketLLMConfigs = new Map<string, LLMConfig>();
 
-    socket.on('set_llm_config', (data, ack) => {
-      socketLLMConfigs.set(socket.id, { endpoint: data.endpoint, apiKey: data.apiKey, model: data.model });
-      ack?.({ success: true });
-    });
+    socket.on('set_llm_config', guarded('set_llm_config', async (data, ack) => {
+      if (!data || typeof data !== 'object') return;
+      const endpoint = str(data.endpoint, 300);
+      const apiKey = str(data.apiKey, 300);
+      const model = str(data.model, 100);
+      if (!endpoint || !apiKey || !model) {
+        if (typeof ack === 'function') ack({ success: false, error: 'endpoint / apiKey / model 不能为空' });
+        return;
+      }
+      const endpointError = await validateLLMEndpoint(endpoint);
+      if (endpointError) {
+        if (typeof ack === 'function') ack({ success: false, error: endpointError });
+        return;
+      }
+      socketLLMConfigs.set(socket.id, { endpoint, apiKey, model });
+      if (typeof ack === 'function') ack({ success: true });
+    }));
 
-    socket.on('get_llm_config', (ack) => {
-      ack?.({ hasConfig: socketLLMConfigs.has(socket.id) });
-    });
+    socket.on('get_llm_config', guarded('get_llm_config', (ack) => {
+      if (typeof ack === 'function') ack({ hasConfig: socketLLMConfigs.has(socket.id) });
+    }));
 
     // ---- Leave Room (intentional) ----
-    socket.on('leave_room', () => {
+    socket.on('leave_room', guarded('leave_room', () => {
       handleLeave(socket, true);
-    });
+    }));
 
     // ---- Play Again ----
-    socket.on('play_again', () => {
+    socket.on('play_again', guarded('play_again', () => {
       const info = socketRooms.get(socket.id);
       if (!info) return;
       const room = roomManager.getRoom(info.roomCode);
@@ -408,12 +540,22 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
       });
 
       console.log(`[room] Room ${room.roomCode} reset for new game`);
-    });
+    }));
 
     // ---- Disconnect (accidental — grace period) ----
     socket.on('disconnect', () => {
       socketLLMConfigs.delete(socket.id); // clean up API key
+      rateLimiter.clear(socket.id);
       console.log(`[socket] disconnected: ${socket.id}`);
+      // If this socket provided the room's LLM key and the game hasn't started, drop it
+      const leaveInfo = socketRooms.get(socket.id);
+      if (leaveInfo) {
+        const room = roomManager.getRoom(leaveInfo.roomCode);
+        if (room && room.llmConfigFrom === socket.id && room.phase === 'waiting') {
+          room.llmConfig = undefined;
+          room.llmConfigFrom = undefined;
+        }
+      }
       handleLeave(socket, false);
     });
 
@@ -442,7 +584,7 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
         return;
       }
 
-      // Accidental disconnect during game → stay in room, auto-接管
+      // Accidental disconnect during game → stay in room, auto-接管, with a rejoin deadline
       if (room.phase === 'playing') {
         // Host transfer: pass to next alive human
         if (info.playerId === room.hostId) {
@@ -454,10 +596,19 @@ export function createSocketServer(httpServer: HTTPServer, authManager: AuthMana
           // If no other human alive, host stays with disconnected player
         }
 
-        // Clear any previous grace timer, but DON'T set a new one
+        // Grace timer: if the player never rejoins, remove them so the room can't leak
         const existing = room.disconnectedPlayers.get(info.playerId);
         if (existing) clearTimeout(existing);
-        room.disconnectedPlayers.delete(info.playerId);
+        const playerId = info.playerId;
+        const timer = setTimeout(() => {
+          room.disconnectedPlayers.delete(playerId);
+          const r = roomManager.getRoom(info.roomCode);
+          if (r) {
+            console.log(`[room] ${info.nickname} 重连超时，移出房间 ${info.roomCode}`);
+            removePlayerFromRoom(r, playerId);
+          }
+        }, DISCONNECT_GRACE_MS);
+        room.disconnectedPlayers.set(playerId, timer);
 
         io.to(info.roomCode).emit('player_list', {
           players: room.getPlayerInfos(),

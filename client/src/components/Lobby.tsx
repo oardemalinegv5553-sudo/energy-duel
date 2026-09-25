@@ -7,7 +7,7 @@ import LLMSettings from './LLMSettings';
 interface Props {
   socket: Socket<ServerToClientEvents, ClientToServerEvents>;
   onError: (msg: string) => void;
-  onRoomCreated: (roomCode: string, playerId: string, roomType: RoomType) => void;
+  onRoomCreated: (roomCode: string, playerId: string, roomType: RoomType, reconnectToken?: string) => void;
   isLoggedIn: boolean;
   username: string | null;
   onLogout: () => void;
@@ -84,7 +84,7 @@ export default function Lobby({ socket, onError, onRoomCreated, isLoggedIn, user
       initialLevel,
     }, (res) => {
       setLoading(false);
-      onRoomCreated(res.roomCode, res.playerId, roomType);
+      onRoomCreated(res.roomCode, res.playerId, roomType, res.reconnectToken);
     });
   };
 
@@ -105,7 +105,7 @@ export default function Lobby({ socket, onError, onRoomCreated, isLoggedIn, user
       if (!res.success) {
         onError(res.error || '加入失败');
       } else {
-        onRoomCreated(targetCode, res.playerId!, res.roomType || 'duo');
+        onRoomCreated(targetCode, res.playerId!, res.roomType || 'duo', res.reconnectToken);
       }
     });
   };

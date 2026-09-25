@@ -31,6 +31,8 @@ export class GameRoom {
   cumulativeCounters: Record<string, Record<string, number>> = {};  // playerId → { skillId: count } (§3.7)
   chatMessages: ChatMessage[] = [];  // chat history (max 200)
   llmConfig?: LLMConfig;            // host's LLM API config (for LLM bots)
+  llmConfigFrom?: string;           // socket.id that provided llmConfig
+  reconnectTokens: Map<string, string> = new Map();  // playerId → rejoin credential
 
   constructor(roomCode: string, roomType: RoomType = 'duo') {
     this.roomCode = roomCode;
@@ -78,6 +80,7 @@ export class GameRoom {
   removePlayer(playerId: string): boolean {
     this.players.delete(playerId);
     this.pendingMoves.delete(playerId);
+    this.reconnectTokens.delete(playerId);
     if (playerId === this.hostId) {
       // Prefer human players for host transfer
       const human = this.getAllPlayers().find(p => !p.isBot);

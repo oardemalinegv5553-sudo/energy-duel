@@ -13,6 +13,7 @@ function generateRoomCode(): string {
 
 export class RoomManager {
   private rooms: Map<string, GameRoom> = new Map();
+  private cleanupTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   createRoom(roomType: RoomType = 'duo', initialLevel: number = 1): GameRoom {
     let code: string;
@@ -33,18 +34,30 @@ export class RoomManager {
     const room = this.rooms.get(code);
     if (room) {
       room.clearTimer();
+      for (const t of room.disconnectedPlayers.values()) clearTimeout(t);
+      room.disconnectedPlayers.clear();
+      room.llmConfig = undefined;  // don't hold API keys longer than needed
+      room.llmConfigFrom = undefined;
       this.rooms.delete(code);
+    }
+    const pending = this.cleanupTimers.get(code);
+    if (pending) {
+      clearTimeout(pending);
+      this.cleanupTimers.delete(code);
     }
   }
 
-  // Cleanup empty rooms after 5 minutes
+  // Cleanup rooms with no humans after 5 minutes
   scheduleCleanup(code: string): void {
-    setTimeout(() => {
+    if (this.cleanupTimers.has(code)) return;  // already scheduled
+    const timer = setTimeout(() => {
+      this.cleanupTimers.delete(code);
       const room = this.rooms.get(code);
-      if (room && room.players.size === 0) {
+      if (room && (room.players.size === 0 || !room.hasHumanPlayers())) {
         this.deleteRoom(code);
       }
     }, 5 * 60 * 1000);
+    this.cleanupTimers.set(code, timer);
   }
 
   getRoomSummaries(): RoomSummary[] {
